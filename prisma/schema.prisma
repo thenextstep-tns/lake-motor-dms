@@ -68,8 +68,11 @@ model Vehicle {
   // Logistics
   location    String?
   salesPerson String?
+  salesNotes  String?
   guarantee   String?
   googleDriveUrl String?
+  walkaroundVideo String?
+  testDriveVideo String?
 
   // Manufacture Details
   plantCity    String?
@@ -146,7 +149,7 @@ model Vehicle {
   seoKeywords    String?
   seoDescription String?
 
-  status String @default("PURCHASED") // PURCHASED, IN_REPAIR, READY, POSTED, SOLD
+  status String @default("PURCHASED") // PURCHASED, IN_REPAIR, READY, POSTED, SOLD, ON_HOLD
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -231,9 +234,11 @@ model TimeLog {
 model Deposit {
   id           String   @id @default(cuid())
   amount       Decimal
-  method       String   // ZELLE, CASH
+  method       String   // ZELLE, HELCIM, WIRE, CASH, CREDIT_CARD
   buyerName    String
+  date         DateTime @default(now())
   expiryDate   DateTime
+  notes        String?
   
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])

@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import DepositModal from '@/app/components/inventory/DepositModal';
 
 export default function InventoryTable({ vehicles, userId }: { vehicles: any[], userId: string }) {
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
     // Filter logic
     const filteredVehicles = vehicles.filter(vehicle => {
@@ -22,6 +25,11 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
     const getCount = (status: string) => {
         if (status === 'ALL') return vehicles.length;
         return vehicles.filter(v => v.status === status).length;
+    };
+
+    const handleDepositClick = (vehicle: any) => {
+        setSelectedVehicle(vehicle);
+        setIsDepositModalOpen(true);
     };
 
     return (
@@ -59,8 +67,6 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Color</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Miles</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Price</th>
-                            <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Cost</th>
-                            <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">T</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">Inspection</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">Actions</th>
                         </tr>
@@ -73,7 +79,8 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                         ${vehicle.status === 'PURCHASED' ? 'bg-purple-100 text-purple-800' :
                                             vehicle.status === 'READY' ? 'bg-green-100 text-green-800' :
                                                 vehicle.status === 'SOLD' ? 'bg-gray-100 text-gray-800' :
-                                                    'bg-yellow-100 text-yellow-800'}`}>
+                                                    vehicle.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-800' :
+                                                        'bg-blue-100 text-blue-800'}`}>
                                         {vehicle.status}
                                     </span>
                                 </td>
@@ -91,8 +98,10 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                     </div>
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap">
-                                    <div className="text-sm font-medium text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</div>
-                                    <div className="text-xs text-gray-500">{vehicle.trim}</div>
+                                    <Link href={`/inventory/${vehicle.vin}`} className="block hover:underline">
+                                        <div className="text-sm font-medium text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</div>
+                                        <div className="text-xs text-gray-500">{vehicle.trim}</div>
+                                    </Link>
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap">
                                     <div className="text-sm text-gray-900 font-mono">{vehicle.vin.substring(vehicle.vin.length - 8)}</div>
@@ -107,21 +116,26 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                 <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
                                     ${vehicle.salePrice?.toLocaleString()}
                                 </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                                    ${vehicle.vehicleCost?.toLocaleString()}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
-                                    {vehicle.isNew ? 'N' : 'U'}
-                                </td>
                                 <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
                                     -
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap text-center text-sm font-medium">
-                                    <Link href={`/inventory/${vehicle.vin}/edit`} className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-100 rounded inline-block">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                    </Link>
+                                    <div className="flex items-center justify-center gap-2">
+                                        <button
+                                            onClick={() => handleDepositClick(vehicle)}
+                                            className="text-yellow-600 hover:text-yellow-900 p-1 hover:bg-yellow-100 rounded"
+                                            title="Add Deposit"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </button>
+                                        <Link href={`/inventory/${vehicle.vin}/edit`} className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-100 rounded">
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </Link>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -131,7 +145,7 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
 
             {/* Status Tabs */}
             <div className="bg-gray-100 border-t border-gray-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0">
-                {['ALL', 'PURCHASED', 'DELIVERED', 'INSPECTED', 'IN_REPAIR', 'REPAIRED', 'DETAILED', 'PICTURED', 'POSTED', 'SOLD'].map(status => (
+                {['ALL', 'PURCHASED', 'DELIVERED', 'INSPECTED', 'IN_REPAIR', 'REPAIRED', 'DETAILED', 'PICTURED', 'POSTED', 'ON_HOLD', 'SOLD'].map(status => (
                     <button
                         key={status}
                         onClick={() => setStatusFilter(status)}
@@ -144,6 +158,14 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                     </button>
                 ))}
             </div>
+
+            {selectedVehicle && (
+                <DepositModal
+                    vehicle={selectedVehicle}
+                    isOpen={isDepositModalOpen}
+                    onClose={() => setIsDepositModalOpen(false)}
+                />
+            )}
         </div>
     );
 }

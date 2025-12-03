@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createVehicle, updateVehicle, decodeVin } from '@/app/actions/vehicle';
 import { syncVehicleImages, reorderImages, toggleImageVisibility } from '@/app/actions/drive';
+import { deleteDeposit } from '@/app/actions/deposit-delete';
+import DepositModal from '@/app/components/inventory/DepositModal';
 import { useRouter } from 'next/navigation';
 
 export default function AddVehicleForm({ userId, initialData, onSuccess }: { userId: string, initialData?: any, onSuccess?: () => void }) {
@@ -13,6 +15,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
     const [syncing, setSyncing] = useState(false);
     const [descriptionType, setDescriptionType] = useState('Regular');
     const [images, setImages] = useState(initialData?.images || []);
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
     const [formData, setFormData] = useState(initialData || {
         // Core
@@ -29,8 +32,8 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
         vehicleEquipment: '', windowStickerEquipment: '',
 
         // Logistics
-        location: 'Lake Motor Group LLC', salesPerson: 'Any / All', guarantee: '',
-        googleDriveUrl: '',
+        location: 'Lake Motor Group LLC', salesPerson: 'Any / All', salesNotes: '', guarantee: '',
+        googleDriveUrl: '', walkaroundVideo: '', testDriveVideo: '',
         plantCity: '', plantState: '', plantCountry: '', grossWeight: '',
 
         // Flags
@@ -57,10 +60,20 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
-        setFormData((prev: any) => ({
-            ...prev,
-            [name]: type === 'number' ? parseFloat(value) || 0 : value
-        }));
+
+        setFormData((prev: any) => {
+            const newData = {
+                ...prev,
+                [name]: type === 'number' ? parseFloat(value) || 0 : value
+            };
+
+            // Auto-set Stock Number from VIN (last 6 digits)
+            if (name === 'vin' && value.length >= 6) {
+                newData.stockNumber = value.slice(-6);
+            }
+
+            return newData;
+        });
     };
 
     const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,7 +314,8 @@ ${footer}`;
         { id: 'financials', label: 'Pricing & Financials' },
         { id: 'logistics', label: 'Logistics & Flags' },
         { id: 'marketing', label: 'Marketing & SEO' },
-        { id: 'images', label: 'Images' },
+        { id: 'images', label: 'Media' },
+        { id: 'deposits', label: 'Customers & Deposits' },
     ];
 
     return (
@@ -459,6 +473,19 @@ ${footer}`;
                             </div>
                             <Input label="Location" name="location" value={formData.location} onChange={handleChange} />
                             <Input label="Sales Person" name="salesPerson" value={formData.salesPerson} onChange={handleChange} />
+
+                            <div className="col-span-1 md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Sales Notes (Internal)</label>
+                                <textarea
+                                    name="salesNotes"
+                                    value={formData.salesNotes || ''}
+                                    onChange={handleChange}
+                                    rows={3}
+                                    className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
+                                    placeholder="Private notes for sales team..."
+                                />
+                            </div>
+
                             <Input label="Guarantee/Warranty Info" name="guarantee" value={formData.guarantee} onChange={handleChange} />
 
                             <div className="col-span-1 md:col-span-2 mt-4">
@@ -565,6 +592,11 @@ ${footer}`;
                 {
                     activeTab === 'images' && (
                         <div className="space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <Input label="Walkaround Video URL (YouTube)" name="walkaroundVideo" value={formData.walkaroundVideo} onChange={handleChange} placeholder="https://youtube.com/watch?v=..." />
+                                <Input label="Test Drive Video URL (YouTube)" name="testDriveVideo" value={formData.testDriveVideo} onChange={handleChange} placeholder="https://youtube.com/watch?v=..." />
+                            </div>
+
                             <div className="flex flex-col">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Google Drive Folder Link</label>
                                 <div className="flex gap-2">
@@ -641,6 +673,69 @@ ${footer}`;
                     )
                 }
 
+                {/* Customers & Deposits Tab */}
+                {
+                    activeTab === 'deposits' && (
+                        <div className="space-y-6">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-bold text-gray-800">Customers & Deposits</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsDepositModalOpen(true)}
+                                    disabled={!formData.vin || !initialData}
+                                    className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 disabled:opacity-50"
+                                >
+                                    + Add Deposit
+                                </button>
+                            </div>
+
+                            {!initialData ? (
+                                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                                    <p className="text-gray-500">Please save the vehicle first to manage deposits.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {formData.deposits && formData.deposits.length > 0 ? (
+                                        formData.deposits.map((deposit: any) => (
+                                            <div key={deposit.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold text-lg">{deposit.buyerName}</h4>
+                                                        <p className="text-sm text-gray-500">Method: {deposit.method}</p>
+                                                        <p className="text-sm text-gray-500">Date: {new Date(deposit.date).toLocaleDateString()}</p>
+                                                        {deposit.notes && <p className="text-sm text-gray-600 mt-2 bg-gray-50 p-2 rounded">{deposit.notes}</p>}
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-xl font-bold text-green-600">${deposit.amount.toLocaleString()}</p>
+                                                        <p className="text-sm text-red-500 font-medium">Expires: {new Date(deposit.expiryDate).toLocaleDateString()}</p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                if (confirm('Are you sure you want to delete this deposit?')) {
+                                                                    await deleteDeposit(deposit.id, formData.vin);
+                                                                    // Refresh logic needed here, ideally re-fetch or update state
+                                                                    window.location.reload();
+                                                                }
+                                                            }}
+                                                            className="text-red-600 hover:text-red-800 text-sm mt-2 underline"
+                                                        >
+                                                            Delete Deposit
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                                            <p className="text-gray-500">No active deposits.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
                 <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
                     <button
                         type="button"
@@ -657,7 +752,19 @@ ${footer}`;
                         {loading ? 'Saving...' : (initialData ? 'Update Vehicle' : 'Create Vehicle')}
                     </button>
                 </div>
+
             </form >
+
+            {initialData && (
+                <DepositModal
+                    vehicle={initialData}
+                    isOpen={isDepositModalOpen}
+                    onClose={() => {
+                        setIsDepositModalOpen(false);
+                        window.location.reload(); // Refresh to show new deposit
+                    }}
+                />
+            )}
         </div >
     );
 }

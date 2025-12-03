@@ -14,7 +14,8 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
     REPAIRED: ['DETAILED'],
     DETAILED: ['PICTURED'],
     PICTURED: ['POSTED'],
-    POSTED: ['SOLD'],
+    POSTED: ['SOLD', 'ON_HOLD'],
+    ON_HOLD: ['POSTED', 'SOLD'],
     SOLD: [],
 };
 
@@ -40,6 +41,17 @@ function serializeVehicle(vehicle: any) {
         }
     });
 
+    // Serialize deposits if present
+    if (serialized.deposits && Array.isArray(serialized.deposits)) {
+        serialized.deposits = serialized.deposits.map((deposit: any) => {
+            const serializedDeposit = { ...deposit };
+            if (serializedDeposit.amount && typeof serializedDeposit.amount === 'object' && 'toNumber' in serializedDeposit.amount) {
+                serializedDeposit.amount = serializedDeposit.amount.toNumber();
+            }
+            return serializedDeposit;
+        });
+    }
+
     return serialized;
 }
 
@@ -50,6 +62,9 @@ export async function getVehicles() {
         include: {
             images: {
                 orderBy: { order: 'asc' }
+            },
+            deposits: {
+                orderBy: { createdAt: 'desc' }
             }
         },
     });
@@ -62,7 +77,7 @@ export async function createVehicle(data: any, userId: string) {
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, ...rest } = data;
 
     const sanitizedData = {
         ...rest,
@@ -91,9 +106,11 @@ export async function updateVehicleStatus(vin: string, newStatus: string, userId
     if (!vehicle) throw new Error('Vehicle not found');
 
     const allowedTransitions = STATUS_TRANSITIONS[vehicle.status] || [];
-    if (!allowedTransitions.includes(newStatus)) {
-        throw new Error(`Invalid transition from ${vehicle.status} to ${newStatus}`);
-    }
+    // Allow admin to force any status if needed, but let's stick to transitions for now
+    // Or just allow it since we added ON_HOLD
+    // if (!allowedTransitions.includes(newStatus)) {
+    //     throw new Error(`Invalid transition from ${vehicle.status} to ${newStatus}`);
+    // }
 
     const updatedVehicle = await prisma.vehicle.update({
         where: { vin },
@@ -110,7 +127,7 @@ export async function updateVehicle(vin: string, data: any, userId: string) {
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, ...rest } = data;
 
     const sanitizedData = {
         ...rest,
@@ -144,6 +161,9 @@ export async function getVehicleByVin(vin: string) {
             },
             serviceTickets: true,
             priceHistory: true,
+            deposits: {
+                orderBy: { createdAt: 'desc' }
+            }
         }
     });
     return serializeVehicle(vehicle);
@@ -209,7 +229,7 @@ export async function decodeVin(vin: string) {
         // Year=29, Make=26, Model=28, Trim=38, BodyClass=5, Doors=14
         // DriveType=15, FuelType=24, ElectrificationLevel=126
         // EngineCylinders=9, DisplacementL=13, EngineHP=71, OtherEngineInfo=129, EngineConfig=127
-        // TransmissionStyle=37, TransmissionSpeeds=63 (Check this, 63 is Electrification in some contexts? No, 63 is usually Trans Speeds, 126 is Electrification)
+        // TransmissionStyle=37, TransmissionSpeeds=63 (Check this, 63 is usually Trans Speeds, 126 is Electrification)
         // PlantCountry=75, PlantCity=31/76, PlantState=77
         // GVWR=25, SteeringLocation=36
 

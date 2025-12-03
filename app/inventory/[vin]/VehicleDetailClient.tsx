@@ -1,26 +1,12 @@
-import { prisma } from '@/lib/prisma';
-import { notFound } from 'next/navigation';
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import DepositModal from '@/app/components/inventory/DepositModal';
 
-export default async function VehicleDetailPage({ params }: { params: Promise<{ vin: string }> }) {
-    const { vin } = await params;
-
-    const vehicle = await prisma.vehicle.findUnique({
-        where: { vin },
-        include: {
-            images: {
-                orderBy: { order: 'asc' }
-            },
-            deposits: {
-                orderBy: { createdAt: 'desc' }
-            }
-        }
-    });
-
-    if (!vehicle) {
-        notFound();
-    }
+export default function VehicleDetailClient({ vehicle }: { vehicle: any }) {
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
     return (
         <div className="bg-black min-h-screen text-white p-8">
@@ -39,12 +25,20 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
                             </span>
                         </div>
                     </div>
-                    <Link
-                        href={`/inventory/${vehicle.vin}/edit`}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition-colors"
-                    >
-                        Edit Vehicle
-                    </Link>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => setIsDepositModalOpen(true)}
+                            className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-medium transition-colors"
+                        >
+                            Add Deposit
+                        </button>
+                        <Link
+                            href={`/inventory/${vehicle.vin}/edit`}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium transition-colors"
+                        >
+                            Edit Vehicle
+                        </Link>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -65,6 +59,19 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
                                 </div>
                             )}
                         </div>
+                        <div className="grid grid-cols-4 gap-2">
+                            {vehicle.images?.slice(1, 5).map((img: any) => (
+                                <div key={img.id} className="aspect-video bg-gray-900 rounded overflow-hidden relative">
+                                    <Image
+                                        src={`/api/images/${img.driveId}?thumbnail=true`}
+                                        alt="Vehicle thumbnail"
+                                        fill
+                                        className="object-cover"
+                                        unoptimized
+                                    />
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
                     {/* Details */}
@@ -82,23 +89,35 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
                             <div>
                                 <span className="text-gray-500 block">Price</span>
                                 <span className="text-xl font-bold text-green-500">
-                                    ${Number(vehicle.salePrice).toLocaleString()}
+                                    ${vehicle.salePrice?.toLocaleString()}
                                 </span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500 block">Color</span>
+                                <span>{vehicle.color}</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500 block">Engine</span>
+                                <span>{vehicle.engine}</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-500 block">Transmission</span>
+                                <span>{vehicle.transmission}</span>
                             </div>
                         </div>
 
                         {vehicle.deposits && vehicle.deposits.length > 0 && (
                             <div className="mt-8">
                                 <h2 className="text-xl font-bold mb-4 border-b border-gray-800 pb-2 text-yellow-500">Active Deposit</h2>
-                                {vehicle.deposits.map((deposit) => (
-                                    <div key={deposit.id} className="bg-yellow-900/20 border border-yellow-700/50 rounded p-4 mb-4">
+                                {vehicle.deposits.map((deposit: any) => (
+                                    <div key={deposit.id} className="bg-yellow-900/20 border border-yellow-700/50 rounded p-4">
                                         <div className="flex justify-between mb-2">
                                             <span className="text-gray-400">Client</span>
                                             <span className="font-bold">{deposit.buyerName}</span>
                                         </div>
                                         <div className="flex justify-between mb-2">
                                             <span className="text-gray-400">Amount</span>
-                                            <span className="font-bold">${Number(deposit.amount).toLocaleString()}</span>
+                                            <span className="font-bold">${deposit.amount.toLocaleString()}</span>
                                         </div>
                                         <div className="flex justify-between mb-2">
                                             <span className="text-gray-400">Expires</span>
@@ -117,6 +136,12 @@ export default async function VehicleDetailPage({ params }: { params: Promise<{ 
                         )}
                     </div>
                 </div>
+
+                <DepositModal
+                    vehicle={vehicle}
+                    isOpen={isDepositModalOpen}
+                    onClose={() => setIsDepositModalOpen(false)}
+                />
             </div>
         </div>
     );

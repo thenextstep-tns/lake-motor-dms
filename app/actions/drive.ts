@@ -23,7 +23,7 @@ export async function syncVehicleImages(vin: string, folderUrl: string) {
     });
 
     // 1. Identify and Delete Orphans (Images in DB but not in new Drive Folder)
-    const driveFileIds = new Set(files.map(f => f.id));
+    const driveFileIds = new Set(files.map((f: any) => f.id));
     const orphans = existingImages.filter(img => img.driveId && !driveFileIds.has(img.driveId));
 
     if (orphans.length > 0) {
