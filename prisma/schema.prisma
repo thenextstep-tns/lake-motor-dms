@@ -1,0 +1,254 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// --- Users & RBAC ---
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("ADMIN") // ADMIN, SALES, SERVICE, TECH
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assignedTickets ServiceTicket[]
+  timeLogs        TimeLog[]
+  tasks           Task[]
+}
+
+// --- Inventory Module ---
+model Vehicle {
+  // Core Details
+  vin           String   @id
+  stockNumber   String?
+  year          Int
+  make          String
+  model         String
+  trim          String?
+  bodyStyle     String?
+  color         String?
+  interiorColor String?
+  odometer      Int      @default(0)
+  condition     String?  @default("Used")
+  titleStatus   String?  @default("Clean")
+  keyId         String?
+
+  // Performance & Specs
+  // Extended Specs
+  engine          String?
+  engineSize      String?
+  engineCylinders Int?
+  transmission    String?
+  transmissionType String? // Automatic, Manual
+  transmissionSpeeds Int?
+  driveTrain      String? // FWD, RWD, 4WD, AWD
+  fuelType        String? // Gas, Diesel, Electric, Hybrid
+  doors           Int?
+  cityMpg         Int?
+  highwayMpg      Int?
+  interiorOemColor String?
+  exteriorOemColor String?
+  vehicleCaption  String?
+  category        String?
+  size            String?
+
+  // Equipment
+  vehicleEquipment String? // Text area for equipment
+  windowStickerEquipment String?
+
+  // Logistics
+  location    String?
+  salesPerson String?
+  guarantee   String?
+  googleDriveUrl String?
+
+  // Manufacture Details
+  plantCity    String?
+  plantState   String?
+  plantCountry String?
+  grossWeight  String?
+
+  // Flags
+  isFeatured         Boolean @default(false)
+  isCertified        Boolean @default(false)
+  isOneOwner         Boolean @default(false)
+  warrantyAvailable  Boolean @default(false)
+  financingAvailable Boolean @default(false)
+  isSold             Boolean @default(false)
+  isNew              Boolean @default(false)
+  isAsIs             Boolean @default(false)
+
+  // Description Builder Flags
+  flagLowMiles       Boolean @default(false)
+  flagNonSmoker      Boolean @default(false)
+  flagFullService    Boolean @default(false)
+  flagMultiPoint     Boolean @default(false)
+  flagNeverWrecked   Boolean @default(false)
+  flagFullyEquipped  Boolean @default(false)
+  flagLuxury         Boolean @default(false)
+  flagPowerful       Boolean @default(false)
+  flagFuelEfficient  Boolean @default(false)
+  flagSporty         Boolean @default(false)
+  flagOffRoad        Boolean @default(false)
+  flagMechanicallyPerfect Boolean @default(false)
+  flagPerfectExterior Boolean @default(false)
+  flagPerfectInterior Boolean @default(false)
+  flagCleanExterior   Boolean @default(false)
+  flagCleanInterior   Boolean @default(false)
+  flagBelowBlueBook   Boolean @default(false)
+  flagLowMonthly      Boolean @default(false)
+  flagBhph            Boolean @default(false)
+  flagGuaranteedFin   Boolean @default(false)
+  flagCarfaxReport    Boolean @default(false)
+  flagCarfaxCertified Boolean @default(false)
+  flagCarfaxOneOwner  Boolean @default(false)
+  flagAutocheckReport Boolean @default(false)
+  flagAutocheckCert   Boolean @default(false)
+  flagAutocheckOne    Boolean @default(false)
+
+  // Financials
+  purchasePrice  Decimal @default(0)
+  salePrice      Decimal @default(0)
+  regularPrice   Decimal?
+  cashPrice      Decimal?
+  wholesalePrice Decimal?
+  loanValue      Decimal? // Blue/Black book value
+  msrp           Decimal?
+  exportPrice     Decimal?
+  blueBook        Decimal?
+  blackBook       Decimal?
+  edmundsBook     Decimal?
+  nadaBook        Decimal?
+  downPayment     Decimal?
+  monthlyPayment  Decimal?
+  biWeeklyPayment Decimal?
+  weeklyPayment   Decimal?
+  vehicleCost     Decimal?
+  repairCost      Decimal?
+  bottomLinePrice Decimal?
+  preferredPriceText String?
+  salePriceExpires DateTime?
+  tax            Decimal @default(0)
+  total          Decimal @default(0)
+  balance        Decimal @default(0)
+
+  // SEO & Marketing
+  seoTitle       String?
+  seoKeywords    String?
+  seoDescription String?
+
+  status String @default("PURCHASED") // PURCHASED, IN_REPAIR, READY, POSTED, SOLD
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  images         VehicleImage[]
+  serviceTickets ServiceTicket[]
+  deposits       Deposit[]
+  tasks          Task[]
+  priceHistory   PriceHistory[]
+}
+
+model VehicleImage {
+  id        String  @id @default(cuid())
+  driveId   String  // Google Drive File ID
+  publicUrl String?
+  isPublic  Boolean @default(false)
+  order     Int     @default(0)
+  mimeType  String?
+  name      String?
+  
+  vehicleVin String
+  vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
+}
+
+model PriceHistory {
+  id        String   @id @default(cuid())
+  oldPrice  Decimal
+  newPrice  Decimal
+  date      DateTime @default(now())
+  
+  vehicleVin String
+  vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
+}
+
+// --- Service Module ---
+model ServiceTicket {
+  id          String   @id @default(cuid())
+  description String
+  status      String   @default("OPEN") // OPEN, WAITING_PARTS, IN_PROGRESS, DONE
+  
+  vehicleVin String
+  vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
+  
+  techId String?
+  tech   User?   @relation(fields: [techId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  parts    Part[]
+  timeLogs TimeLog[]
+}
+
+model Part {
+  id             String  @id @default(cuid())
+  name           String
+  vendor         String?
+  trackingNumber String?
+  cost           Decimal @default(0)
+  status         String  @default("ORDERED") // ORDERED, RECEIVED, INSTALLED
+  
+  ticketId String
+  ticket   ServiceTicket @relation(fields: [ticketId], references: [id])
+}
+
+model TimeLog {
+  id        String    @id @default(cuid())
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  type      String    @default("PRODUCTIVE") // PRODUCTIVE, UNPRODUCTIVE
+  
+  ticketId String?
+  ticket   ServiceTicket? @relation(fields: [ticketId], references: [id])
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+// --- Sales & Admin Module ---
+model Deposit {
+  id           String   @id @default(cuid())
+  amount       Decimal
+  method       String   // ZELLE, CASH
+  buyerName    String
+  expiryDate   DateTime
+  
+  vehicleVin String
+  vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
+  
+  createdAt DateTime @default(now())
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  description String
+  status      String   @default("PENDING") // PENDING, DONE
+  
+  vehicleVin String?
+  vehicle    Vehicle? @relation(fields: [vehicleVin], references: [vin])
+  
+  assignedToId String?
+  assignedTo   User?   @relation(fields: [assignedToId], references: [id])
+}
