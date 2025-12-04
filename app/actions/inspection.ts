@@ -3,6 +3,8 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
+import { syncInspectionToTicket } from '@/app/actions/service';
+
 export async function createInspection(data: any) {
     try {
         const { vehicleVin, name, date, info, codes } = data;
@@ -13,6 +15,10 @@ export async function createInspection(data: any) {
                 name,
                 date: new Date(date),
                 info,
+                needsMechanicalRecon: data.needsMechanicalRecon || false,
+                needsCosmeticRecon: data.needsCosmeticRecon || false,
+                mechanicalReconData: data.mechanicalReconData ? JSON.stringify(data.mechanicalReconData) : null,
+                cosmeticReconData: data.cosmeticReconData ? JSON.stringify(data.cosmeticReconData) : null,
                 codes: {
                     create: codes.map((c: any) => ({
                         code: c.code,
@@ -24,6 +30,13 @@ export async function createInspection(data: any) {
                 codes: true
             }
         });
+
+        // Sync to Service Ticket
+        try {
+            await syncInspectionToTicket(inspection.id, vehicleVin);
+        } catch (syncError) {
+            console.error('Error syncing inspection to ticket:', syncError);
+        }
 
         revalidatePath(`/inventory/${vehicleVin}`);
         revalidatePath(`/inventory/${vehicleVin}/edit`);
@@ -47,7 +60,11 @@ export async function updateInspection(id: string, data: any) {
                 data: {
                     name,
                     date: new Date(date),
-                    info
+                    info,
+                    needsMechanicalRecon: data.needsMechanicalRecon || false,
+                    needsCosmeticRecon: data.needsCosmeticRecon || false,
+                    mechanicalReconData: data.mechanicalReconData ? JSON.stringify(data.mechanicalReconData) : null,
+                    cosmeticReconData: data.cosmeticReconData ? JSON.stringify(data.cosmeticReconData) : null,
                 }
             });
 
@@ -75,6 +92,13 @@ export async function updateInspection(id: string, data: any) {
         });
 
         if (updatedInspection) {
+            // Sync to Service Ticket
+            try {
+                await syncInspectionToTicket(id, updatedInspection.vehicleVin);
+            } catch (syncError) {
+                console.error('Error syncing inspection to ticket:', syncError);
+            }
+
             revalidatePath(`/inventory/${updatedInspection.vehicleVin}`);
             revalidatePath(`/inventory/${updatedInspection.vehicleVin}/edit`);
         }
@@ -99,4 +123,16 @@ export async function deleteInspection(id: string, vin: string) {
         console.error('Error deleting inspection:', error);
         return { success: false, error: 'Failed to delete inspection' };
     }
+}
+
+export async function getDiagnosticCodeDescription(code: string) {
+    // Mock implementation for now
+    const mockCodes: Record<string, string> = {
+        'P0300': 'Random/Multiple Cylinder Misfire Detected',
+        'P0171': 'System Too Lean (Bank 1)',
+        'P0420': 'Catalyst System Efficiency Below Threshold (Bank 1)',
+        'P0442': 'Evaporative Emission Control System Leak Detected (Small Leak)',
+        'P0455': 'Evaporative Emission Control System Leak Detected (Gross Leak)',
+    };
+    return mockCodes[code] || 'Unknown Diagnostic Code';
 }

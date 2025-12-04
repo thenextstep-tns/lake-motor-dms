@@ -1,4 +1,5 @@
 import AddVehicleForm from './AddVehicleForm';
+import { Suspense } from 'react';
 
 // Mock User ID for now
 const MOCK_USER_ID = 'mock-admin-id';
@@ -14,7 +15,9 @@ export default function AddVehiclePage() {
                     </p>
                 </div>
 
-                <AddVehicleForm userId={MOCK_USER_ID} />
+                <Suspense fallback={<div>Loading form...</div>}>
+                    <AddVehicleForm userId={MOCK_USER_ID} />
+                </Suspense>
             </div>
         </div>
     );

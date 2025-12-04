@@ -3,6 +3,8 @@ import Navbar from '@/app/components/public/Navbar';
 import Hero from '@/app/components/public/Hero';
 import Footer from '@/app/components/public/Footer';
 
+export const dynamic = 'force-dynamic';
+
 export default function Home() {
   return (
     <div className="bg-black min-h-screen flex flex-col">

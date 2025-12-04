@@ -1,6 +1,7 @@
 import { getVehicleByVin } from '@/app/actions/vehicle';
 import AddVehicleForm from '@/app/inventory/add/AddVehicleForm';
 import { notFound } from 'next/navigation';
+import { Suspense } from 'react';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,10 +26,12 @@ export default async function EditVehiclePage({ params }: { params: Promise<{ vi
                     </p>
                 </div>
 
-                <AddVehicleForm
-                    userId={MOCK_USER_ID}
-                    initialData={vehicle}
-                />
+                <Suspense fallback={<div>Loading form...</div>}>
+                    <AddVehicleForm
+                        userId={MOCK_USER_ID}
+                        initialData={vehicle}
+                    />
+                </Suspense>
             </div>
         </div>
     );

@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { createVehicle, updateVehicle, decodeVin } from '@/app/actions/vehicle';
 import { syncVehicleImages, reorderImages, toggleImageVisibility } from '@/app/actions/drive';
 import { deleteDeposit } from '@/app/actions/deposit-delete';
-import { createInspection, updateInspection, deleteInspection } from '@/app/actions/inspection';
+import { createInspection, updateInspection, deleteInspection, getDiagnosticCodeDescription } from '@/app/actions/inspection';
+import { getVehicleServiceHistory as getHistory } from '@/app/actions/service';
 import DepositModal from '@/app/components/inventory/DepositModal';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function AddVehicleForm({ userId, initialData, onSuccess }: { userId: string, initialData?: any, onSuccess?: () => void }) {
     const router = useRouter();
-    const [activeTab, setActiveTab] = useState('posting');
+    const searchParams = useSearchParams();
+    const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'posting');
     const [loading, setLoading] = useState(false);
     const [decoding, setDecoding] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -26,9 +28,18 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
         name: '',
         date: new Date().toISOString().split('T')[0],
         info: '',
+        needsMechanicalRecon: false,
+        needsCosmeticRecon: false,
+        mechanicalReconData: {} as Record<string, any>,
+        cosmeticReconData: {} as Record<string, any>,
         codes: [] as { code: string, description: string }[]
     });
     const [newCode, setNewCode] = useState({ code: '', description: '' });
+
+    // Service History State
+    const [serviceHistory, setServiceHistory] = useState<any[]>([]);
+
+
 
     const [formData, setFormData] = useState(initialData || {
         // Core
@@ -70,6 +81,12 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
         // SEO
         seoTitle: '', seoKeywords: '', seoDescription: ''
     });
+
+    useEffect(() => {
+        if (activeTab === 'service' && formData.vin) {
+            getHistory(formData.vin).then(setServiceHistory);
+        }
+    }, [activeTab, formData.vin]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
@@ -366,11 +383,33 @@ ${footer}`;
 
         setLoading(true);
         try {
+            let result;
             if (editingInspection) {
-                await updateInspection(editingInspection.id, inspectionForm);
+                result = await updateInspection(editingInspection.id, inspectionForm);
             } else {
-                await createInspection({ ...inspectionForm, vehicleVin: formData.vin });
+                result = await createInspection({ ...inspectionForm, vehicleVin: formData.vin });
             }
+
+            // Check for Recon and Prompt for Service Ticket
+            if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
+                const confirmService = confirm('Inspection saved. This vehicle needs recon. Would you like to create a Service Ticket and move it to "INSPECTED" status?');
+                if (confirmService) {
+                    // Create Service Ticket
+                    const { createServiceTicket } = await import('@/app/actions/service');
+                    await createServiceTicket({
+                        vehicleVin: formData.vin,
+                        description: `Recon needed: ${inspectionForm.needsMechanicalRecon ? 'Mechanical ' : ''}${inspectionForm.needsCosmeticRecon ? 'Cosmetic' : ''}`,
+                        inspectionId: (result as any).inspection?.id || editingInspection?.id,
+                        repairProcess: 'Initial Inspection Completed',
+                        repairDifficulty: 'Medium'
+                    });
+
+                    // Update Vehicle Status
+                    await updateVehicle(formData.vin, { ...formData, status: 'INSPECTED' }, userId);
+                    alert('Service Ticket created and Vehicle status updated to INSPECTED.');
+                }
+            }
+
             window.location.reload();
         } catch (error) {
             console.error(error);
@@ -380,11 +419,17 @@ ${footer}`;
         }
     };
 
-    const handleAddCode = () => {
+    const handleAddCode = async () => {
         if (!newCode.code) return;
+
+        let description = newCode.description;
+        if (!description) {
+            description = await getDiagnosticCodeDescription(newCode.code);
+        }
+
         setInspectionForm(prev => ({
             ...prev,
-            codes: [...prev.codes, newCode]
+            codes: [...prev.codes, { ...newCode, description }]
         }));
         setNewCode({ code: '', description: '' });
     };
@@ -402,6 +447,10 @@ ${footer}`;
             name: inspection.name,
             date: new Date(inspection.date).toISOString().split('T')[0],
             info: inspection.info || '',
+            needsMechanicalRecon: inspection.needsMechanicalRecon || false,
+            needsCosmeticRecon: inspection.needsCosmeticRecon || false,
+            mechanicalReconData: inspection.mechanicalReconData ? JSON.parse(inspection.mechanicalReconData) : {},
+            cosmeticReconData: inspection.cosmeticReconData ? JSON.parse(inspection.cosmeticReconData) : {},
             codes: inspection.codes.map((c: any) => ({ code: c.code, description: c.description || '' }))
         });
         setIsInspectionFormOpen(true);
@@ -435,6 +484,10 @@ ${footer}`;
                                 name: '',
                                 date: new Date().toISOString().split('T')[0],
                                 info: '',
+                                needsMechanicalRecon: false,
+                                needsCosmeticRecon: false,
+                                mechanicalReconData: {},
+                                cosmeticReconData: {},
                                 codes: []
                             });
                             setIsInspectionFormOpen(true);
@@ -821,6 +874,10 @@ ${footer}`;
                                             name: '',
                                             date: new Date().toISOString().split('T')[0],
                                             info: '',
+                                            needsMechanicalRecon: false,
+                                            needsCosmeticRecon: false,
+                                            mechanicalReconData: {},
+                                            cosmeticReconData: {},
                                             codes: []
                                         });
                                         setIsInspectionFormOpen(true);
@@ -848,6 +905,139 @@ ${footer}`;
                                         rows={3}
                                         className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
                                     />
+                                </div>
+
+                                <div className="mb-4 space-y-4 border-t border-gray-200 pt-4">
+                                    <div className="flex gap-6">
+                                        <label className="flex items-center space-x-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={inspectionForm.needsMechanicalRecon}
+                                                onChange={(e) => setInspectionForm({ ...inspectionForm, needsMechanicalRecon: e.target.checked })}
+                                                className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                                            />
+                                            <span className="font-medium text-gray-700">Need Mechanical Recon</span>
+                                        </label>
+                                        <label className="flex items-center space-x-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={inspectionForm.needsCosmeticRecon}
+                                                onChange={(e) => setInspectionForm({ ...inspectionForm, needsCosmeticRecon: e.target.checked })}
+                                                className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                                            />
+                                            <span className="font-medium text-gray-700">Need Cosmetic Recon</span>
+                                        </label>
+                                    </div>
+
+                                    {inspectionForm.needsMechanicalRecon && (
+                                        <div className="bg-white p-4 rounded border border-gray-200">
+                                            <h5 className="font-bold mb-3 text-gray-800">Mechanical Checklist</h5>
+                                            <div className="space-y-4">
+                                                {['Engine', 'Transmission', 'Brakes', 'Tires', 'Suspension', 'Electrical', 'AC/Heat', 'Fluids'].map(item => {
+                                                    const itemData = inspectionForm.mechanicalReconData[item] || { status: 'Pass', notes: '' };
+                                                    const status = typeof itemData === 'string' ? itemData : itemData.status || 'Pass';
+                                                    const notes = typeof itemData === 'string' ? '' : itemData.notes || '';
+
+                                                    return (
+                                                        <div key={item} className="border-b border-gray-100 pb-4 last:border-0">
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <span className="font-medium text-gray-700">{item}</span>
+                                                                <div className="flex bg-gray-100 rounded p-1">
+                                                                    {['Pass', 'Attention', 'Fail'].map(option => (
+                                                                        <button
+                                                                            key={option}
+                                                                            type="button"
+                                                                            onClick={() => setInspectionForm({
+                                                                                ...inspectionForm,
+                                                                                mechanicalReconData: {
+                                                                                    ...inspectionForm.mechanicalReconData,
+                                                                                    [item]: { status: option, notes }
+                                                                                }
+                                                                            })}
+                                                                            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${status === option
+                                                                                ? (option === 'Pass' ? 'bg-green-500 text-white' : option === 'Attention' ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white')
+                                                                                : 'text-gray-500 hover:bg-gray-200'
+                                                                                }`}
+                                                                        >
+                                                                            {option}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <textarea
+                                                                placeholder={`Notes for ${item}...`}
+                                                                value={notes}
+                                                                onChange={(e) => setInspectionForm({
+                                                                    ...inspectionForm,
+                                                                    mechanicalReconData: {
+                                                                        ...inspectionForm.mechanicalReconData,
+                                                                        [item]: { status, notes: e.target.value }
+                                                                    }
+                                                                })}
+                                                                rows={1}
+                                                                className="w-full text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {inspectionForm.needsCosmeticRecon && (
+                                        <div className="bg-white p-4 rounded border border-gray-200">
+                                            <h5 className="font-bold mb-3 text-gray-800">Cosmetic Recon</h5>
+                                            <div className="space-y-4">
+                                                {['Paint', 'Body', 'Glass', 'Wheels', 'Interior', 'Upholstery', 'Detailing'].map(item => {
+                                                    const itemData = inspectionForm.cosmeticReconData[item] || { status: 'Pass', notes: '' };
+                                                    const status = typeof itemData === 'string' ? itemData : itemData.status || 'Pass';
+                                                    const notes = typeof itemData === 'string' ? '' : itemData.notes || '';
+
+                                                    return (
+                                                        <div key={item} className="border-b border-gray-100 pb-4 last:border-0">
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <span className="font-medium text-gray-700">{item}</span>
+                                                                <div className="flex bg-gray-100 rounded p-1">
+                                                                    {['Pass', 'Attention', 'Fail'].map(option => (
+                                                                        <button
+                                                                            key={option}
+                                                                            type="button"
+                                                                            onClick={() => setInspectionForm({
+                                                                                ...inspectionForm,
+                                                                                cosmeticReconData: {
+                                                                                    ...inspectionForm.cosmeticReconData,
+                                                                                    [item]: { status: option, notes }
+                                                                                }
+                                                                            })}
+                                                                            className={`px-3 py-1 text-xs font-medium rounded transition-colors ${status === option
+                                                                                ? (option === 'Pass' ? 'bg-green-500 text-white' : option === 'Attention' ? 'bg-yellow-500 text-white' : 'bg-red-500 text-white')
+                                                                                : 'text-gray-500 hover:bg-gray-200'
+                                                                                }`}
+                                                                        >
+                                                                            {option}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            <textarea
+                                                                placeholder={`Notes for ${item}...`}
+                                                                value={notes}
+                                                                onChange={(e) => setInspectionForm({
+                                                                    ...inspectionForm,
+                                                                    cosmeticReconData: {
+                                                                        ...inspectionForm.cosmeticReconData,
+                                                                        [item]: { status, notes: e.target.value }
+                                                                    }
+                                                                })}
+                                                                rows={1}
+                                                                className="w-full text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="mb-4">
@@ -914,67 +1104,161 @@ ${footer}`;
                                 </div>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-                                {!initialData ? (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                                        <p className="text-gray-500">Please save the vehicle first to manage inspections.</p>
-                                    </div>
-                                ) : inspections.length === 0 ? (
-                                    <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                                        <p className="text-gray-500">No inspections recorded.</p>
-                                    </div>
-                                ) : (
-                                    inspections.map((inspection: any) => (
-                                        <div key={inspection.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h4 className="font-bold text-lg">{inspection.name}</h4>
-                                                    <p className="text-sm text-gray-500">Date: {new Date(inspection.date).toLocaleDateString()}</p>
-                                                    {inspection.info && <p className="text-sm text-gray-600 mt-2">{inspection.info}</p>}
-                                                    {inspection.codes && inspection.codes.length > 0 && (
-                                                        <div className="mt-2">
-                                                            <p className="text-xs font-bold text-gray-500 uppercase">Diagnostic Codes:</p>
-                                                            <div className="flex flex-wrap gap-2 mt-1">
-                                                                {inspection.codes.map((c: any, i: number) => (
-                                                                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                                                        {c.code}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex flex-col gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => startEditInspection(inspection)}
-                                                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={async () => {
-                                                            if (confirm('Delete this inspection?')) {
-                                                                await deleteInspection(inspection.id, formData.vin);
-                                                                window.location.reload();
-                                                            }
-                                                        }}
-                                                        className="text-red-600 hover:text-red-800 text-sm font-medium"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </div>
-                                            </div>
+                            <div className="space-y-8">
+                                <div className="space-y-4">
+                                    {!initialData ? (
+                                        <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                                            <p className="text-gray-500">Please save the vehicle first to manage service and inspections.</p>
                                         </div>
-                                    ))
-                                )}
+                                    ) : null}
+                                </div>
+
+                                {/* Existing Inspections */}
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Inspections</h3>
+                                    {inspections.length === 0 ? (
+                                        <p className="text-gray-500 text-sm italic">No inspections found.</p>
+                                    ) : (
+                                        <div className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+                                            <ul className="divide-y divide-gray-200">
+                                                {inspections.map((inspection: any) => {
+                                                    // Parse failed items
+                                                    const failedItems: any[] = [];
+                                                    const parseRecon = (dataStr: string | null, type: string) => {
+                                                        if (!dataStr) return;
+                                                        try {
+                                                            const data = JSON.parse(dataStr);
+                                                            Object.entries(data).forEach(([item, details]: [string, any]) => {
+                                                                if (details.status === 'Fail' || details.status === 'Attention') {
+                                                                    failedItems.push({ item, ...details, type });
+                                                                }
+                                                            });
+                                                        } catch (e) { }
+                                                    };
+                                                    parseRecon(inspection.mechanicalReconData, 'Mechanical');
+                                                    parseRecon(inspection.cosmeticReconData, 'Cosmetic');
+
+                                                    return (
+                                                        <li key={inspection.id} className="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                                                            <div className="flex flex-col space-y-3">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <p className="text-sm font-medium text-indigo-600 truncate">{inspection.name}</p>
+                                                                        <p className="text-sm text-gray-500">{new Date(inspection.date).toLocaleDateString()}</p>
+                                                                    </div>
+                                                                    <div className="flex space-x-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => startEditInspection(inspection)}
+                                                                            className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={async () => {
+                                                                                if (confirm('Are you sure you want to delete this inspection?')) {
+                                                                                    await deleteInspection(inspection.id, formData.vin);
+                                                                                    setInspections((prev: any[]) => prev.filter((i: any) => i.id !== inspection.id));
+                                                                                }
+                                                                            }}
+                                                                            className="text-red-600 hover:text-red-900 text-sm font-medium"
+                                                                        >
+                                                                            Delete
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Failed Items & Codes */}
+                                                                {(failedItems.length > 0 || (inspection.codes && inspection.codes.length > 0)) && (
+                                                                    <div className="bg-red-50 p-3 rounded-md border border-red-100">
+                                                                        <h5 className="text-xs font-bold text-red-800 uppercase tracking-wide mb-2">Attention Needed</h5>
+
+                                                                        {failedItems.length > 0 && (
+                                                                            <ul className="list-disc list-inside text-sm text-red-700 mb-2">
+                                                                                {failedItems.map((fail, idx) => (
+                                                                                    <li key={idx}>
+                                                                                        <span className="font-medium">{fail.item}</span> ({fail.status})
+                                                                                        {fail.notes && <span className="text-gray-600 ml-1">- {fail.notes}</span>}
+                                                                                    </li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        )}
+
+                                                                        {inspection.codes && inspection.codes.length > 0 && (
+                                                                            <div className="mt-2">
+                                                                                <p className="text-xs font-semibold text-red-800 mb-1">Diagnostic Codes:</p>
+                                                                                <div className="flex flex-wrap gap-2">
+                                                                                    {inspection.codes.map((code: any) => (
+                                                                                        <span key={code.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                                                            {code.code}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Service History Log */}
+                                <div className="mt-8">
+                                    <h3 className="text-lg font-medium text-gray-900 mb-4">Service History Log</h3>
+                                    {
+                                        serviceHistory.length === 0 ? (
+                                            <p className="text-gray-500 text-sm italic">No completed service history found.</p>
+                                        ) : (
+                                            <div className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50">
+                                                        <tr>
+                                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tech</th>
+                                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                        {serviceHistory.map((ticket) => (
+                                                            <tr key={ticket.id}>
+                                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                                    {new Date(ticket.updatedAt).toLocaleDateString()}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-sm text-gray-900">
+                                                                    {ticket.description}
+                                                                </td>
+                                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                                    {ticket.tech?.name || 'Unassigned'}
+                                                                </td>
+                                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                                        {ticket.status}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                                    <a href={`/service/${ticket.id}`} className="text-indigo-600 hover:text-indigo-900">View</a>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )
+                                    }
+                                </div>
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* Customers & Deposits Tab */}
                 {
                     activeTab === 'deposits' && (
                         <div className="space-y-6">
@@ -1014,7 +1298,6 @@ ${footer}`;
                                                             onClick={async () => {
                                                                 if (confirm('Are you sure you want to delete this deposit?')) {
                                                                     await deleteDeposit(deposit.id, formData.vin);
-                                                                    // Refresh logic needed here, ideally re-fetch or update state
                                                                     window.location.reload();
                                                                 }
                                                             }}

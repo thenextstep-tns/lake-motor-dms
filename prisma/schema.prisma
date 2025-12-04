@@ -190,13 +190,19 @@ model PriceHistory {
 model ServiceTicket {
   id          String   @id @default(cuid())
   description String
-  status      String   @default("OPEN") // OPEN, WAITING_PARTS, IN_PROGRESS, DONE
+  status      String   @default("Queue") // Queue, Assigned, Waiting_Parts, In_Progress, Quality_Control, Completed
   
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
   
   techId String?
   tech   User?   @relation(fields: [techId], references: [id])
+
+  repairProcess    String? // Description of the repair process
+  repairDifficulty String? // Quick, Medium, Difficult
+
+  inspectionId String?
+  inspection   Inspection? @relation(fields: [inspectionId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -215,17 +221,23 @@ model Part {
   status         String  @default("ORDERED") // ORDERED, RECEIVED, INSTALLED
   
   ticketId String
-  ticket   ServiceTicket @relation(fields: [ticketId], references: [id])
+  ticket   ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
 
 model TimeLog {
   id        String    @id @default(cuid())
   startTime DateTime  @default(now())
   endTime   DateTime?
-  type      String    @default("PRODUCTIVE") // PRODUCTIVE, UNPRODUCTIVE
+  type      String    @default("PRODUCTIVE") // PRODUCTIVE, UNPRODUCTIVE, STATUS_CHANGE
+  notes     String?
+  
+  // Detailed Tracking
+  status      String?   // Ticket status during this session
+  tasks       String?   // JSON: Selected tasks/inspection items
+  workDetails String?   // JSON: Details of work done
   
   ticketId String?
-  ticket   ServiceTicket? @relation(fields: [ticketId], references: [id])
+  ticket   ServiceTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -269,6 +281,15 @@ model Inspection {
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
   
   codes      InspectionCode[]
+  
+  // Recon Fields
+  needsMechanicalRecon Boolean @default(false)
+  needsCosmeticRecon   Boolean @default(false)
+  
+  mechanicalReconData String? // JSON string for checklist
+  cosmeticReconData   String? // JSON string for cosmetic fields
+
+  serviceTickets ServiceTicket[]
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
