@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import DepositModal from '@/app/components/inventory/DepositModal';
 
 export default function InventoryTable({ vehicles, userId }: { vehicles: any[], userId: string }) {
@@ -87,10 +88,12 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                 <td className="px-3 py-2 whitespace-nowrap">
                                     <div className="h-10 w-16 bg-gray-200 rounded overflow-hidden relative">
                                         {vehicle.images && vehicle.images.length > 0 ? (
-                                            <img
+                                            <Image
                                                 src={vehicle.images[0].driveId ? `/api/images/${vehicle.images[0].driveId}?thumbnail=true` : vehicle.images[0].publicUrl}
-                                                alt=""
-                                                className="h-full w-full object-cover"
+                                                alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                                                className="object-cover"
+                                                fill
+                                                unoptimized
                                             />
                                         ) : (
                                             <div className="flex items-center justify-center h-full text-gray-400 text-xs">No Img</div>
@@ -98,7 +101,7 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                     </div>
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap">
-                                    <Link href={`/inventory/${vehicle.vin}`} className="block hover:underline">
+                                    <Link href={`/inventory/${vehicle.vin}/edit`} className="block hover:underline">
                                         <div className="text-sm font-medium text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</div>
                                         <div className="text-xs text-gray-500">{vehicle.trim}</div>
                                     </Link>
@@ -117,7 +120,20 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
                                     ${vehicle.salePrice?.toLocaleString()}
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
-                                    -
+                                    {vehicle.inspections && vehicle.inspections.length > 0 ? (
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-green-600 font-medium text-xs">
+                                                {new Date(vehicle.inspections[0].date).toLocaleDateString()}
+                                            </span>
+                                            {vehicle.inspections[0].codes && vehicle.inspections[0].codes.length > 0 && (
+                                                <span className="text-xs text-red-500 bg-red-50 px-1 rounded border border-red-100">
+                                                    {vehicle.inspections[0].codes.length} Codes
+                                                </span>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-gray-400">-</span>
+                                    )}
                                 </td>
                                 <td className="px-3 py-2 whitespace-nowrap text-center text-sm font-medium">
                                     <div className="flex items-center justify-center gap-2">

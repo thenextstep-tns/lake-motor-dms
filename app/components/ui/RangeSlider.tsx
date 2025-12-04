@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 interface RangeSliderProps {
     min: number;
@@ -11,42 +11,21 @@ interface RangeSliderProps {
 }
 
 export default function RangeSlider({ min, max, value, onChange, step = 1 }: RangeSliderProps) {
-    const [minVal, setMinVal] = useState(value[0]);
-    const [maxVal, setMaxVal] = useState(value[1]);
-    const minValRef = useRef(value[0]);
-    const maxValRef = useRef(value[1]);
     const range = useRef<HTMLDivElement>(null);
 
     // Convert to percentage
-    const getPercent = (value: number) => Math.round(((value - min) / (max - min)) * 100);
-
-    // Sync state with props
-    useEffect(() => {
-        setMinVal(value[0]);
-        setMaxVal(value[1]);
-        minValRef.current = value[0];
-        maxValRef.current = value[1];
-    }, [value]);
+    const getPercent = useCallback((val: number) => Math.round(((val - min) / (max - min)) * 100), [min, max]);
 
     // Update range width and position
     useEffect(() => {
-        const minPercent = getPercent(minVal);
-        const maxPercent = getPercent(maxValRef.current);
+        const minPercent = getPercent(value[0]);
+        const maxPercent = getPercent(value[1]);
 
         if (range.current) {
             range.current.style.left = `${minPercent}%`;
             range.current.style.width = `${maxPercent - minPercent}%`;
         }
-    }, [minVal, min, max]);
-
-    useEffect(() => {
-        const minPercent = getPercent(minValRef.current);
-        const maxPercent = getPercent(maxVal);
-
-        if (range.current) {
-            range.current.style.width = `${maxPercent - minPercent}%`;
-        }
-    }, [maxVal, min, max]);
+    }, [value, getPercent]);
 
     return (
         <div className="relative w-full h-6 flex items-center justify-center">
@@ -54,28 +33,24 @@ export default function RangeSlider({ min, max, value, onChange, step = 1 }: Ran
                 type="range"
                 min={min}
                 max={max}
-                value={minVal}
+                value={value[0]}
                 step={step}
                 onChange={(event) => {
-                    const value = Math.min(Number(event.target.value), maxVal - 1);
-                    setMinVal(value);
-                    minValRef.current = value;
-                    onChange([value, maxVal]);
+                    const newVal = Math.min(Number(event.target.value), value[1] - 1);
+                    onChange([newVal, value[1]]);
                 }}
                 className="thumb thumb--left pointer-events-none absolute h-0 w-full outline-none z-[3] appearance-none"
-                style={{ zIndex: minVal > max - 100 ? 5 : 3 }}
+                style={{ zIndex: value[0] > max - 100 ? 5 : 3 }}
             />
             <input
                 type="range"
                 min={min}
                 max={max}
-                value={maxVal}
+                value={value[1]}
                 step={step}
                 onChange={(event) => {
-                    const value = Math.max(Number(event.target.value), minVal + 1);
-                    setMaxVal(value);
-                    maxValRef.current = value;
-                    onChange([minVal, value]);
+                    const newVal = Math.max(Number(event.target.value), value[0] + 1);
+                    onChange([value[0], newVal]);
                 }}
                 className="thumb thumb--right pointer-events-none absolute h-0 w-full outline-none z-[4] appearance-none"
             />

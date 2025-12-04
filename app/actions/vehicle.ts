@@ -65,6 +65,10 @@ export async function getVehicles() {
             },
             deposits: {
                 orderBy: { createdAt: 'desc' }
+            },
+            inspections: {
+                include: { codes: true },
+                orderBy: { date: 'desc' }
             }
         },
     });
@@ -77,7 +81,7 @@ export async function createVehicle(data: any, userId: string) {
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, deposits, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, ...rest } = data;
 
     const sanitizedData = {
         ...rest,
@@ -127,7 +131,7 @@ export async function updateVehicle(vin: string, data: any, userId: string) {
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, deposits, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, ...rest } = data;
 
     const sanitizedData = {
         ...rest,
@@ -163,6 +167,10 @@ export async function getVehicleByVin(vin: string) {
             priceHistory: true,
             deposits: {
                 orderBy: { createdAt: 'desc' }
+            },
+            inspections: {
+                include: { codes: true },
+                orderBy: { date: 'desc' }
             }
         }
     });
@@ -245,7 +253,7 @@ export async function decodeVin(vin: string) {
         const model = getValue(28);
         const trim = getValue(38);
         // Map Body Style to our fixed options
-        let rawBodyStyle = getValue(5);
+        const rawBodyStyle = getValue(5);
         let normalizedBodyStyle = '';
         let category = 'Car'; // Default
 

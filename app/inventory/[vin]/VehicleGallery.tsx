@@ -1,8 +1,8 @@
 'use client';
 
 import { VehicleImage } from '@prisma/client';
-import { uploadVehicleImage, toggleImagePublic } from '@/app/actions/vehicle';
-import { useState, useTransition } from 'react';
+
+
 
 interface VehicleGalleryProps {
     vin: string;

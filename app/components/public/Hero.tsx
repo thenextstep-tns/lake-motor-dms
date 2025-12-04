@@ -1,16 +1,20 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Hero() {
     return (
         <header className="relative h-screen min-h-[600px] bg-black">
             {/* Background Image with Overlay */}
             <div className="absolute inset-0 z-0">
-                <img
+                <Image
                     src="https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?q=80&w=2500&auto=format&fit=crop"
                     alt="Luxury Car Background"
-                    className="w-full h-full object-cover opacity-60"
+                    className="object-cover opacity-60"
+                    fill
+                    priority
+                    unoptimized
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black"></div>
             </div>

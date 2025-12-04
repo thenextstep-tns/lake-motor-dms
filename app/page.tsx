@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import Navbar from '@/app/components/public/Navbar';
 import Hero from '@/app/components/public/Hero';
 import Footer from '@/app/components/public/Footer';
@@ -17,9 +18,9 @@ export default function Home() {
               At Lake Motor Group, we pride ourselves on offering a curated selection of high-quality vehicles.
               Our transparent pricing and commitment to customer satisfaction make us the premier choice for your next vehicle.
             </p>
-            <a href="/public/inventory" className="inline-block border-2 border-white text-white px-8 py-3 font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all duration-300">
+            <Link href="/public/inventory" className="inline-block border-2 border-white text-white px-8 py-3 font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all duration-300">
               Browse Collection
-            </a>
+            </Link>
           </div>
         </section>
       </main>
