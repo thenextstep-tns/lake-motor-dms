@@ -392,22 +392,12 @@ ${footer}`;
 
             // Check for Recon and Prompt for Service Ticket
             if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
-                const confirmService = confirm('Inspection saved. This vehicle needs recon. Would you like to create a Service Ticket and move it to "INSPECTED" status?');
-                if (confirmService) {
-                    // Create Service Ticket
-                    const { createServiceTicket } = await import('@/app/actions/service');
-                    await createServiceTicket({
-                        vehicleVin: formData.vin,
-                        description: `Recon needed: ${inspectionForm.needsMechanicalRecon ? 'Mechanical ' : ''}${inspectionForm.needsCosmeticRecon ? 'Cosmetic' : ''}`,
-                        inspectionId: (result as any).inspection?.id || editingInspection?.id,
-                        repairProcess: 'Initial Inspection Completed',
-                        repairDifficulty: 'Medium'
-                    });
-
-                    // Update Vehicle Status
-                    await updateVehicle(formData.vin, { ...formData, status: 'INSPECTED' }, userId);
-                    alert('Service Ticket created and Vehicle status updated to INSPECTED.');
-                }
+                // Service Ticket is automatically created/synced by the server action if needed
+                // We just need to ensure the vehicle status is updated if it wasn't already
+                await updateVehicle(formData.vin, { ...formData, status: 'INSPECTED' }, userId);
+                alert('Inspection saved. Service Ticket updated/created automatically.');
+            } else {
+                alert('Inspection saved.');
             }
 
             window.location.reload();

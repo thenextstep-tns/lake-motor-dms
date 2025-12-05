@@ -14,6 +14,7 @@ export async function getServiceTickets() {
             tech: true,
             parts: true,
             timeLogs: true,
+            inspection: true,
         },
         orderBy: { updatedAt: 'desc' },
     });
@@ -62,7 +63,7 @@ export async function updateServiceTicket(id: string, data: any) {
         data: {
             description: data.description,
             status: data.status,
-            techId: data.techId,
+            techId: data.techId || null,
             repairProcess: data.repairProcess,
             repairDifficulty: data.repairDifficulty,
         },
@@ -134,36 +135,39 @@ export async function clockIn(ticketId: string, userId: string, selectedTasks: s
     revalidatePath('/service');
 }
 
-export async function clockOut(
-    ticketId: string,
-    userId: string,
-    resolutions: Record<string, { fixed: boolean, notes: string }> = {},
-    newIssues?: { item: string, notes: string, fixed: boolean, resolutionNotes: string }[] | null
-) {
-    // Ensure mock user exists (for dev environment)
-    if (userId === 'mock-tech-id') {
-        const userExists = await prisma.user.findUnique({ where: { id: userId } });
-        if (!userExists) {
-            await prisma.user.create({
-                data: {
-                    id: userId,
-                    email: 'tech@example.com',
-                    name: 'Mock Technician',
-                    role: 'TECHNICIAN'
-                }
-            });
+export async function clockOut(ticketId: string, userId: string, resolutions: Record<string, any>, newIssues: any[], generalNotes?: string) {
+    console.log('clockOut called', { ticketId, userId, resolutionsCount: Object.keys(resolutions).length, newIssues, generalNotes });
+    try {
+        // Ensure mock user exists (for dev environment)
+        if (userId === 'mock-tech-id') {
+            const userExists = await prisma.user.findUnique({ where: { id: userId } });
+            if (!userExists) {
+                await prisma.user.create({
+                    data: {
+                        id: userId,
+                        email: 'tech@example.com',
+                        name: 'Mock Technician',
+                        role: 'TECHNICIAN'
+                    }
+                });
+            }
         }
-    }
 
-    // Find the active time log for this user
-    const activeLog = await prisma.timeLog.findFirst({
-        where: {
-            userId,
-            endTime: null
+        // Find the active time log for this user
+        const activeLog = await prisma.timeLog.findFirst({
+            where: {
+                userId,
+                endTime: null
+            }
+        });
+
+        if (!activeLog) {
+            console.error('No active log found for user', userId);
+            throw new Error('No active time log found');
         }
-    });
 
-    if (activeLog) {
+        console.log('Found active log', activeLog.id);
+
         if (activeLog.ticketId) {
             const ticket = await prisma.serviceTicket.findUnique({
                 where: { id: activeLog.ticketId },
@@ -172,7 +176,8 @@ export async function clockOut(
 
             if (ticket?.inspectionId) {
                 const inspection = await prisma.inspection.findUnique({
-                    where: { id: ticket.inspectionId }
+                    where: { id: ticket.inspectionId },
+                    include: { codes: true }
                 });
 
                 if (inspection) {
@@ -264,20 +269,21 @@ export async function clockOut(
                     countIssues(mechData);
                     countIssues(cosData);
 
-                    // Update ticket status if partially complete
-                    if (itemsFixedCount > 0 && remainingIssues > 0) {
-                        await prisma.serviceTicket.update({
-                            where: { id: activeLog.ticketId },
-                            data: { status: 'Partially Complete' }
-                        });
-                    } else if (itemsFixedCount > 0 && remainingIssues === 0) {
-                        // Optional: Auto-complete if everything is fixed? 
-                        // User didn't explicitly ask for this, but it might be good.
-                        // For now, let's leave it as 'Partially Complete' or 'In Progress' 
-                        // and let them manually complete it to be safe, or maybe 'Work Done'?
-                        // Let's stick to 'Partially Complete' if it was 'In Progress' and now has no issues?
-                        // Actually, if remainingIssues === 0, it's effectively complete but maybe waiting for review.
-                        // Let's just handle the "Partially Complete" case requested.
+                    // Update ticket status
+                    if (itemsFixedCount > 0) {
+                        if (remainingIssues === 0) {
+                            // All items fixed -> Move to Quality Control
+                            await prisma.serviceTicket.update({
+                                where: { id: activeLog.ticketId },
+                                data: { status: 'Quality Control' }
+                            });
+                        } else {
+                            // Some items fixed, others remain -> Partially Complete
+                            await prisma.serviceTicket.update({
+                                where: { id: activeLog.ticketId },
+                                data: { status: 'Partially Complete' }
+                            });
+                        }
                     }
                 }
             }
@@ -287,12 +293,16 @@ export async function clockOut(
             where: { id: activeLog.id },
             data: {
                 endTime: new Date(),
-                workDetails: Object.keys(resolutions).length > 0 ? JSON.stringify(resolutions) : null
+                workDetails: Object.keys(resolutions).length > 0 ? JSON.stringify(resolutions) : null,
+                notes: generalNotes || undefined
             }
         });
         if (activeLog.ticketId) {
             revalidatePath(`/service/${activeLog.ticketId}`);
         }
+    } catch (error) {
+        console.error('Error in clockOut:', error);
+        throw error;
     }
 }
 
@@ -538,6 +548,12 @@ export async function syncInspectionToTicket(inspectionId: string, vehicleVin: s
         });
     }
 
+    // Fallback: If no specific items failed but Recon is flagged
+    if (failedItems.length === 0) {
+        if (inspection.needsMechanicalRecon) failedItems.push('Mechanical Recon Needed (General)');
+        if (inspection.needsCosmeticRecon) failedItems.push('Cosmetic Recon Needed (General)');
+    }
+
     if (failedItems.length === 0) return; // Nothing to fix
 
     const description = `Inspection Report ${new Date().toLocaleDateString()}:\n` + failedItems.join('\n');
@@ -551,20 +567,16 @@ export async function syncInspectionToTicket(inspectionId: string, vehicleVin: s
     // 5. Update or Create Logic
     if (existingTicket && existingTicket.status !== 'Completed') {
         // Update existing ticket (Queue, In Progress, Waiting Parts, etc.)
-        // We append the new description to the old one or replace it?
-        // User said "update the same service ticket". Replacing description seems appropriate for an inspection update.
-        // But we should be careful not to lose manual edits. 
-        // For now, let's replace it as the inspection is the source of truth for the "work needed".
         await prisma.serviceTicket.update({
             where: { id: existingTicket.id },
             data: { description }
         });
 
-        // Update Vehicle Status to 'Inspected' if ticket is in Queue
+        // Update Vehicle Status to 'INSPECTED' if ticket is in Queue
         if (existingTicket.status === 'Queue') {
             await prisma.vehicle.update({
                 where: { vin: vehicleVin },
-                data: { status: 'Inspected' }
+                data: { status: 'INSPECTED' }
             });
         }
     } else {
@@ -582,13 +594,15 @@ export async function syncInspectionToTicket(inspectionId: string, vehicleVin: s
                 description,
                 status: 'Queue',
                 inspectionId,
+                repairProcess: 'Initial Inspection Completed',
+                repairDifficulty: 'Medium'
             }
         });
 
-        // Update Vehicle Status to 'Inspected'
+        // Update Vehicle Status to 'INSPECTED'
         await prisma.vehicle.update({
             where: { vin: vehicleVin },
-            data: { status: 'Inspected' }
+            data: { status: 'INSPECTED' }
         });
     }
 

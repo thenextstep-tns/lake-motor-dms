@@ -124,12 +124,12 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
                                     {new Date(ticket.updatedAt).toLocaleDateString()}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                    <button
-                                        onClick={() => handleTicketClick(ticket)}
+                                    <Link
+                                        href={`/service/${ticket.id}`}
                                         className="text-blue-600 hover:text-blue-900 mr-4"
                                     >
                                         Edit
-                                    </button>
+                                    </Link>
                                     <Link href={`/service/${ticket.id}`} className="text-gray-600 hover:text-gray-900">
                                         View
                                     </Link>
@@ -144,17 +144,6 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
                     </div>
                 )}
             </div>
-
-            {selectedTicket && (
-                <ServiceTicketModal
-                    ticket={selectedTicket}
-                    isOpen={isModalOpen}
-                    onClose={() => {
-                        setIsModalOpen(false);
-                        setSelectedTicket(null);
-                    }}
-                />
-            )}
         </div>
     );
 }

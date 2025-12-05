@@ -25,6 +25,30 @@ export default function ServiceTicketModal({ ticket, isOpen, onClose }: { ticket
         }
     }, [ticket]);
 
+    // Parse Inspection Data
+    const getInspectionItems = () => {
+        if (!ticket?.inspection) return [];
+        const items: { item: string, status: string, notes: string }[] = [];
+
+        const parse = (dataStr: string | null) => {
+            if (!dataStr) return;
+            try {
+                const data = JSON.parse(dataStr);
+                Object.entries(data).forEach(([item, details]: [string, any]) => {
+                    if (details.status === 'Fail' || details.status === 'Attention' || details.status === 'Fixed') {
+                        items.push({ item, status: details.status, notes: details.notes });
+                    }
+                });
+            } catch (e) { console.error(e); }
+        };
+
+        parse(ticket.inspection.mechanicalReconData);
+        parse(ticket.inspection.cosmeticReconData);
+        return items;
+    };
+
+    const inspectionItems = getInspectionItems();
+
     if (!isOpen || !ticket) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -89,15 +113,37 @@ export default function ServiceTicketModal({ ticket, isOpen, onClose }: { ticket
                         {/* Tech assignment could go here if we had a list of users */}
                     </div>
 
-                    {/* Description */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Issue Description</label>
-                        <textarea
-                            value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            rows={3}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        />
+                    {/* Description & Inspection Status */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Issue Description (Initial)</label>
+                            <textarea
+                                value={formData.description}
+                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                rows={5}
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                            />
+                        </div>
+                        <div className="bg-gray-50 p-3 rounded border border-gray-200 h-full overflow-y-auto max-h-40">
+                            <h5 className="text-xs font-bold text-gray-500 uppercase mb-2">Live Inspection Status</h5>
+                            {inspectionItems.length > 0 ? (
+                                <ul className="space-y-2">
+                                    {inspectionItems.map((item, idx) => (
+                                        <li key={idx} className="text-sm border-b border-gray-100 last:border-0 pb-1">
+                                            <div className="flex justify-between">
+                                                <span className="font-medium">{item.item}</span>
+                                                <span className={`text-xs px-1 rounded ${item.status === 'Fixed' ? 'bg-green-100 text-green-800' :
+                                                        item.status === 'Fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                                                    }`}>{item.status}</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 truncate">{item.notes}</p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-xs text-gray-400 italic">No inspection data available.</p>
+                            )}
+                        </div>
                     </div>
 
                     {/* Repair Details */}
@@ -129,6 +175,35 @@ export default function ServiceTicketModal({ ticket, isOpen, onClose }: { ticket
                             />
                         </div>
                     </div>
+
+                    {/* Work Logs */}
+                    {ticket.timeLogs && ticket.timeLogs.length > 0 && (
+                        <div className="border-t border-gray-200 pt-6">
+                            <h4 className="font-bold text-gray-800 mb-4">Work History</h4>
+                            <div className="bg-gray-50 rounded-md border border-gray-200 max-h-40 overflow-y-auto p-2">
+                                <ul className="space-y-2">
+                                    {ticket.timeLogs.map((log: any) => (
+                                        <li key={log.id} className="text-xs border-b border-gray-200 last:border-0 pb-2">
+                                            <div className="flex justify-between text-gray-500 mb-1">
+                                                <span>{new Date(log.startTime).toLocaleString()}</span>
+                                                <span className="font-medium text-gray-700">{log.type}</span>
+                                            </div>
+                                            {log.notes && <p className="text-gray-800">{log.notes}</p>}
+                                            {log.workDetails && (
+                                                <div className="mt-1 pl-2 border-l-2 border-gray-300">
+                                                    {Object.entries(JSON.parse(log.workDetails)).map(([key, val]: [string, any]) => (
+                                                        <div key={key}>
+                                                            <span className="font-medium">{key}:</span> {val.fixed ? 'Fixed' : 'Worked on'} - {val.notes}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex justify-end pt-4 border-t border-gray-200">
                         <button
