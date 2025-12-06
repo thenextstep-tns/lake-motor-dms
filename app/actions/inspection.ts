@@ -2,16 +2,35 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { auth } from '@/lib/auth';
 
-import { syncInspectionToTicket } from '@/app/actions/service';
+import { syncInspectionToTicket, createServiceTicket } from '@/app/actions/service';
+
+// Helper to get user context securely
+async function getUserContext() {
+    const session = await auth();
+    if (!session?.user?.id || !session.user.companyId) {
+        throw new Error("Unauthorized");
+    }
+    return {
+        id: session.user.id,
+        companyId: session.user.companyId,
+        lotId: session.user.lotId,
+        roles: session.user.roles,
+        permissions: session.user.permissions
+    };
+}
 
 export async function createInspection(data: any) {
     try {
+        const user = await getUserContext();
         const { vehicleVin, name, date, info, codes } = data;
 
         const inspection = await prisma.inspection.create({
             data: {
                 vehicleVin,
+                companyId: user.companyId, // Inject Tenancy
+                lotId: user.lotId,
                 name,
                 date: new Date(date),
                 info,
@@ -31,11 +50,29 @@ export async function createInspection(data: any) {
             }
         });
 
-        // Sync to Service Ticket
+        // Sync or Create Service Ticket
         try {
-            await syncInspectionToTicket(inspection.id, vehicleVin);
+            if ((data.needsMechanicalRecon || data.needsCosmeticRecon)) {
+                // Determine description based on recon needs
+                const issues = [];
+                if (data.needsMechanicalRecon) issues.push("Mechanical Recon");
+                if (data.needsCosmeticRecon) issues.push("Cosmetic Recon");
+
+                // Create new ticket
+                await createServiceTicket({
+                    vehicleVin,
+                    description: `Inspection: ${issues.join(' & ')}`,
+                    inspectionId: inspection.id,
+                    repairDifficulty: 'Medium', // Default
+                    priority: 'Normal'
+                });
+            } else {
+                // Just link to existing active ticket if any
+                await syncInspectionToTicket(inspection.id, vehicleVin);
+            }
         } catch (syncError) {
-            console.error('Error syncing inspection to ticket:', syncError);
+            console.error('Error syncing/creating ticket:', syncError);
+            return { success: true, inspection, warning: `Inspection saved, but Service Ticket failed: ${syncError instanceof Error ? syncError.message : 'Unknown Error'}` };
         }
 
         revalidatePath(`/inventory/${vehicleVin}`);

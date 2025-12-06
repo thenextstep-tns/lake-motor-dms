@@ -1,11 +1,17 @@
 import { getVehicles } from '@/app/actions/vehicle';
+import { getAccessibleLots } from '@/app/actions/settings';
 import InventoryTable from './InventoryTable';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
-export default async function InventoryPage() {
-    const vehicles = await getVehicles();
+export default async function InventoryPage({ searchParams }: { searchParams: Promise<{ lotId?: string }> }) {
+    const { lotId } = await searchParams;
+    const [vehicles, lots] = await Promise.all([
+        getVehicles(lotId),
+        getAccessibleLots()
+    ]);
+
     // Mock user ID for now
     const userId = "user_123";
 
@@ -21,7 +27,12 @@ export default async function InventoryPage() {
                 </Link>
             </div>
             <div className="flex-1 overflow-hidden">
-                <InventoryTable vehicles={vehicles} userId={userId} />
+                <InventoryTable
+                    vehicles={vehicles}
+                    userId={userId}
+                    lots={lots}
+                    currentLotId={lotId || 'ALL'}
+                />
             </div>
         </div>
     );

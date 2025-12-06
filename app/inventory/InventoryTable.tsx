@@ -3,13 +3,32 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import DepositModal from '@/app/components/inventory/DepositModal';
 
-export default function InventoryTable({ vehicles, userId }: { vehicles: any[], userId: string }) {
+type Props = {
+    vehicles: any[];
+    userId: string;
+    lots: { id: string; name: string }[];
+    currentLotId: string;
+};
+
+export default function InventoryTable({ vehicles, userId, lots, currentLotId }: Props) {
+    const router = useRouter();
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+
+    const handleLotChange = (newLotId: string) => {
+        const params = new URLSearchParams(window.location.search);
+        if (newLotId === 'ALL') {
+            params.delete('lotId');
+        } else {
+            params.set('lotId', newLotId);
+        }
+        router.push(`/inventory?${params.toString()}`);
+    };
 
     // Filter logic
     const filteredVehicles = vehicles.filter(vehicle => {
@@ -35,8 +54,22 @@ export default function InventoryTable({ vehicles, userId }: { vehicles: any[], 
 
     return (
         <div className="flex flex-col h-full bg-white">
-            {/* Search Bar */}
+            {/* Search and Filter Bar */}
             <div className="p-4 border-b border-gray-200 flex items-center gap-4">
+                {/* Lot Dropdown */}
+                <div className="relative">
+                    <select
+                        value={currentLotId}
+                        onChange={(e) => handleLotChange(e.target.value)}
+                        className="block w-48 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                    >
+                        <option value="ALL">All Lots</option>
+                        {lots.map(lot => (
+                            <option key={lot.id} value={lot.id}>{lot.name}</option>
+                        ))}
+                    </select>
+                </div>
+
                 <div className="relative flex-1 max-w-md">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

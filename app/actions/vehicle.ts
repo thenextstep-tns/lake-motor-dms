@@ -3,7 +3,8 @@
 import { prisma } from '@/lib/prisma'; // We need to create this singleton
 import { Vehicle, Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
-import { checkPermission, Role } from '@/lib/auth';
+import { auth } from '@/lib/auth';
+// import { checkPermission, Role } from '@/lib/auth'; // Deprecated
 
 // State Machine Definitions
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -55,9 +56,39 @@ function serializeVehicle(vehicle: any) {
     return serialized;
 }
 
-export async function getVehicles() {
-    // TODO: Add filtering/sorting
+export async function getVehicles(lotId?: string) {
+    const user = await getUserContext();
+
+    // Determine accessible lots
+    // If user has specific lot access, strictly filter by it
+    // But getUserContext returns current session state.
+    // Ideally we should check strict permissions or just respect the session's lotId unless 'all' is requested and allowed.
+
+    // Let's refine the logic:
+    // 1. If lotId is provided, filter by it (AND ensure user has access to it).
+    // 2. If no lotId is provided, fallback to user's "current" lot from session? Or return all accessible?
+    //    For now, let's default to returning ALL vehicles the user has access to if no specific lot is requested,
+    //    OR default to the session's lotId if set.
+
+    // Actually, looking at the UI requirement: "switch between different lots".
+    // This implies we want to see vehicles for a SPECIFIC lot, or maybe "All My Lots".
+
+    const where: Prisma.VehicleWhereInput = {
+        companyId: user.companyId
+    };
+
+    if (lotId && lotId !== 'ALL') {
+        where.lotId = lotId;
+    } else {
+        // If "ALL" or undefined, do we restrict to accessible lots?
+        // If the user isn't an Admin/Owner, they might only have access to specific lots.
+        // We should query the user's accessible lots from DB relation if we want to be strict.
+        // For now, assuming if they are logged in they see all company vehicles unless filtered.
+        // TODO: Enforce accessibleLots restriction here if needed.
+    }
+
     const vehicles = await prisma.vehicle.findMany({
+        where,
         orderBy: { updatedAt: 'desc' },
         include: {
             images: {
@@ -75,9 +106,24 @@ export async function getVehicles() {
     return vehicles.map(serializeVehicle);
 }
 
-export async function createVehicle(data: any, userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    // await checkPermission(user, Role.ADMIN); // Disabled for localhost dev
+// Helper to get user context securely
+async function getUserContext() {
+    const session = await auth();
+    if (!session?.user?.id || !session.user.companyId) {
+        throw new Error("Unauthorized");
+    }
+    return {
+        id: session.user.id,
+        companyId: session.user.companyId,
+        lotId: session.user.lotId,
+        roles: session.user.roles,
+        permissions: session.user.permissions
+    };
+}
+
+export async function createVehicle(data: any, _userId?: string) {
+    const user = await getUserContext();
+    // Verify permissions if needed, e.g. PermissionService.require(user, ActionType.Create, ResourceType.Vehicle)
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
@@ -93,6 +139,9 @@ export async function createVehicle(data: any, userId: string) {
         transmissionSpeeds: data.transmissionSpeeds ? parseInt(data.transmissionSpeeds) : null,
         cityMpg: data.cityMpg ? parseInt(data.cityMpg) : null,
         highwayMpg: data.highwayMpg ? parseInt(data.highwayMpg) : null,
+        // Inject Tenancy
+        companyId: user.companyId,
+        lotId: data.lotId || user.lotId,
     };
 
     const vehicle = await prisma.vehicle.create({
@@ -102,12 +151,16 @@ export async function createVehicle(data: any, userId: string) {
     return serializeVehicle(vehicle);
 }
 
-export async function updateVehicleStatus(vin: string, newStatus: string, userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    // await checkPermission(user, Role.ADMIN); // Disabled for localhost dev
+export async function updateVehicleStatus(vin: string, newStatus: string, _userId?: string) {
+    const user = await getUserContext();
 
-    const vehicle = await prisma.vehicle.findUnique({ where: { vin } });
-    if (!vehicle) throw new Error('Vehicle not found');
+    const vehicle = await prisma.vehicle.findFirst({
+        where: {
+            vin,
+            companyId: user.companyId // Scope check
+        }
+    });
+    if (!vehicle) throw new Error('Vehicle not found or access denied');
 
     const allowedTransitions = STATUS_TRANSITIONS[vehicle.status] || [];
     // Allow admin to force any status if needed, but let's stick to transitions for now
@@ -125,9 +178,14 @@ export async function updateVehicleStatus(vin: string, newStatus: string, userId
     return serializeVehicle(updatedVehicle);
 }
 
-export async function updateVehicle(vin: string, data: any, userId: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    // await checkPermission(user, Role.ADMIN); // Disabled for localhost dev
+export async function updateVehicle(vin: string, data: any, _userId?: string) {
+    const user = await getUserContext();
+
+    // Verify ownership
+    const existing = await prisma.vehicle.findFirst({
+        where: { vin, companyId: user.companyId }
+    });
+    if (!existing) throw new Error("Vehicle not found or access denied");
 
     // Sanitize data
     // Remove fields that are not in the Prisma schema or are relations
@@ -140,13 +198,14 @@ export async function updateVehicle(vin: string, data: any, userId: string) {
         odometer: parseInt(data.odometer) || 0,
         engineCylinders: data.engineCylinders ? parseInt(data.engineCylinders) : null,
         doors: data.doors ? parseInt(data.doors) : null,
+        lotId: data.lotId, // Explicitly allow lotId update
         transmissionSpeeds: data.transmissionSpeeds ? parseInt(data.transmissionSpeeds) : null,
         cityMpg: data.cityMpg ? parseInt(data.cityMpg) : null,
         highwayMpg: data.highwayMpg ? parseInt(data.highwayMpg) : null,
     };
 
     const vehicle = await prisma.vehicle.update({
-        where: { vin },
+        where: { vin }, // VIN is unique globally, but we checked ownership above
         data: sanitizedData,
         include: { images: true }
     });

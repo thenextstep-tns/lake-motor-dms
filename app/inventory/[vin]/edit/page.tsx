@@ -1,4 +1,5 @@
 import { getVehicleByVin } from '@/app/actions/vehicle';
+import { getAccessibleLots } from '@/app/actions/settings';
 import AddVehicleForm from '@/app/inventory/add/AddVehicleForm';
 import { notFound } from 'next/navigation';
 import { Suspense } from 'react';
@@ -7,7 +8,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function EditVehiclePage({ params }: { params: Promise<{ vin: string }> }) {
     const { vin } = await params;
-    const vehicle = await getVehicleByVin(vin);
+    const [vehicle, lots] = await Promise.all([
+        getVehicleByVin(vin),
+        getAccessibleLots()
+    ]);
 
     if (!vehicle) {
         notFound();
@@ -30,6 +34,7 @@ export default async function EditVehiclePage({ params }: { params: Promise<{ vi
                     <AddVehicleForm
                         userId={MOCK_USER_ID}
                         initialData={vehicle}
+                        availableLots={lots}
                     />
                 </Suspense>
             </div>

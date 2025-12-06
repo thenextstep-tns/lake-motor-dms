@@ -98,13 +98,19 @@ export default function ServiceTicketClient({
         console.log('handleClockOutConfirm called', { ticketId: ticket.id, resolutions: itemResolutions, generalNotes });
         try {
             // Pass null for newIssues as we removed that functionality
-            await clockOut(ticket.id, 'mock-tech-id', itemResolutions, [], generalNotes);
+            // FIX: Removed 'mock-tech-id' argument which was causing mismatch
+            const result = await clockOut(ticket.id, itemResolutions, [], generalNotes);
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'Failed to clock out');
+            }
+
             console.log('clockOut successful');
             setActiveTab('details');
             setGeneralNotes('');
         } catch (error) {
             console.error('Failed to clock out:', error);
-            alert('Failed to clock out. Please try again.');
+            alert(`Failed to clock out: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     };
 
@@ -149,7 +155,7 @@ export default function ServiceTicketClient({
                                 <>
                                     {ticket.status === 'Waiting Parts' && (
                                         <button
-                                            onClick={() => confirmPartsReceived(ticket.id, 'mock-tech-id')}
+                                            onClick={() => confirmPartsReceived(ticket.id)}
                                             className="px-4 py-2 rounded font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-sm"
                                         >
                                             Parts Received
@@ -217,10 +223,18 @@ export default function ServiceTicketClient({
                                     )}
 
                                     <button
-                                        onClick={() => completeTicket(ticket.id, 'mock-tech-id')}
+                                        onClick={async () => {
+                                            const actionText = ticket.status === 'Quality Control' ? 'complete' : 'move to QA';
+                                            if (confirm(`Are you sure you want to ${actionText} this ticket?`)) {
+                                                const result = await completeTicket(ticket.id);
+                                                if (!result || !result.success) {
+                                                    alert(`Failed to update ticket: ${result?.error || 'Unknown error'}`);
+                                                }
+                                            }
+                                        }}
                                         className="px-4 py-2 rounded font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
                                     >
-                                        Complete
+                                        {ticket.status === 'Quality Control' ? 'Complete' : 'QA Passed'}
                                     </button>
                                 </>
                             )}

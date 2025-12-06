@@ -9,9 +9,11 @@ import { getVehicleServiceHistory as getHistory } from '@/app/actions/service';
 import DepositModal from '@/app/components/inventory/DepositModal';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function AddVehicleForm({ userId, initialData, onSuccess }: { userId: string, initialData?: any, onSuccess?: () => void }) {
+export default function AddVehicleForm({ userId, initialData, onSuccess, availableLots = [] }: { userId: string, initialData?: any, onSuccess?: () => void, availableLots?: { id: string, name: string }[] }) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    // ...
+
     const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'posting');
     const [loading, setLoading] = useState(false);
     const [decoding, setDecoding] = useState(false);
@@ -57,6 +59,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess }: { use
 
         // Logistics
         location: 'Lake Motor Group LLC', salesPerson: 'Any / All', salesNotes: '', guarantee: '',
+        lotId: initialData?.lotId || '', // Ensure lotId is initialized
         googleDriveUrl: '', walkaroundVideo: '', testDriveVideo: '',
         plantCity: '', plantState: '', plantCountry: '', grossWeight: '',
 
@@ -390,12 +393,17 @@ ${footer}`;
                 result = await createInspection({ ...inspectionForm, vehicleVin: formData.vin });
             }
 
-            // Check for Recon and Prompt for Service Ticket
-            if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'Failed to save inspection');
+            }
+
+            if (result.warning) {
+                alert(result.warning);
+            } else if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
                 // Service Ticket is automatically created/synced by the server action if needed
                 // We just need to ensure the vehicle status is updated if it wasn't already
                 await updateVehicle(formData.vin, { ...formData, status: 'INSPECTED' }, userId);
-                alert('Inspection saved. Service Ticket updated/created automatically.');
+                alert('Inspection saved. Service Ticket created automatically.');
             } else {
                 alert('Inspection saved.');
             }
@@ -638,6 +646,25 @@ ${footer}`;
                             {expandedSections.logistics && (
                                 <div className="p-6 bg-white border-t border-gray-200">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Lot Selection - Only if multiple lots available */}
+                                        {availableLots.length > 0 && (
+                                            <div className="col-span-1 md:col-span-2">
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Lot</label>
+                                                <select
+                                                    name="lotId"
+                                                    value={formData.lotId || ''}
+                                                    onChange={(e) => setFormData(prev => ({ ...prev, lotId: e.target.value }))}
+                                                    className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
+                                                >
+                                                    <option value="">-- Select Lot --</option>
+                                                    {availableLots.map(lot => (
+                                                        <option key={lot.id} value={lot.id}>{lot.name}</option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-xs text-gray-500 mt-1">Move this vehicle to another lot (if authorized).</p>
+                                            </div>
+                                        )}
+
                                         <Input label="Location" name="location" value={formData.location} onChange={handleChange} />
                                         <Input label="Sales Person" name="salesPerson" value={formData.salesPerson} onChange={handleChange} />
 
