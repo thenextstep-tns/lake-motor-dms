@@ -30,35 +30,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (defaultCompany) {
-          // Decide Role: If it's the VERY FIRST user (ignoring the seed logic if it created users, but my seed didn't), make them Admin?
-          // Or just make everyone "Pending" / "Sales"?
-          // User request: "I want all of my users to be google users for now... standard users see lots created for them"
-          // Let's assign them as "Sales Manager" by default to "Main Location" if exists.
-
+          // Fetch Default Lot (Main Location)
           const defaultLot = await prisma.lot.findFirst({
             where: { companyId: defaultCompany.id }
           });
 
-          // Find Sales Manager Role
-          const salesRole = await prisma.role.findFirst({
+          // Check existing members count to decide if this is the First User (Owner)
+          const memberCount = await prisma.companyMember.count({
+            where: { companyId: defaultCompany.id }
+          });
+
+          // Determine Role: Owner if first, else Sales Manager
+          const targetRoleName = memberCount === 0 ? DEFAULT_ROLES[UserRoleType.CompanyOwner] : DEFAULT_ROLES[UserRoleType.SalesManager];
+
+          const roleToAssign = await prisma.role.findFirst({
             where: {
               companyId: defaultCompany.id,
-              name: DEFAULT_ROLES[UserRoleType.SalesManager]
+              name: targetRoleName
             }
           });
 
-          if (salesRole) {
+          if (roleToAssign) {
             await prisma.companyMember.create({
               data: {
                 userId: dbUser.id,
                 companyId: defaultCompany.id,
                 lotId: defaultLot?.id,
+                accessibleLots: defaultLot ? {
+                  connect: { id: defaultLot.id }
+                } : undefined,
                 roles: {
-                  connect: { id: salesRole.id }
+                  connect: { id: roleToAssign.id }
                 }
               }
             });
-            console.log(`Auto-assigned ${user.email} to Default Company as Sales Manager`);
+            console.log(`Auto-assigned ${user.email} to Default Company as ${targetRoleName}`);
           }
         }
       }

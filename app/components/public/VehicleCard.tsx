@@ -48,7 +48,28 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
                     className={`object-cover transition-transform duration-700 group-hover:scale-105 ${isSold ? 'grayscale' : ''}`}
                     unoptimized
                 />
+
+                {/* Marketing Labels Overlay (Only distinct highlights) */}
+                {vehicle.marketingLabels && vehicle.marketingLabels.length > 0 && (
+                    <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1 z-20">
+                        {vehicle.marketingLabels
+                            .filter((label: any) => {
+                                const name = label.name.toLowerCase();
+                                return name.includes('low miles') || name.includes('no damage') || name.includes('no accidents');
+                            })
+                            .map((label: any) => (
+                                <span
+                                    key={label.id}
+                                    className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-black shadow-md border border-white/20 backdrop-blur-sm"
+                                    style={{ backgroundColor: label.colorCode }}
+                                >
+                                    {label.name}
+                                </span>
+                            ))}
+                    </div>
+                )}
             </div>
+
 
             <div className="p-5">
                 <h3 className="text-xl font-bold text-white mb-2 group-hover:text-red-500 transition-colors">
@@ -59,11 +80,11 @@ export default function VehicleCard({ vehicle }: VehicleCardProps) {
                 <div className="flex justify-between items-end border-t border-gray-800 pt-4">
                     <div className="flex flex-col">
                         <span className="text-xs text-gray-500 uppercase font-bold">Price</span>
-                        {hasDiscount && (
+                        {hasDiscount ? (
                             <span className="text-sm text-gray-500 line-through decoration-red-500 decoration-2">
-                                ${vehicle.regularPrice.toLocaleString()}
+                                ${vehicle.regularPrice?.toLocaleString()}
                             </span>
-                        )}
+                        ) : null}
                         <span className="text-2xl font-bold text-yellow-500">{priceText}</span>
                     </div>
                     <span className="text-sm text-white bg-gray-800 px-3 py-1 rounded hover:bg-red-600 transition-colors">View Details</span>

@@ -1,10 +1,18 @@
+import { getVehicleAttributes, getMarketingLabels } from '@/app/actions/vehicle';
+import { getAccessibleLots } from '@/app/actions/settings';
 import AddVehicleForm from './AddVehicleForm';
 import { Suspense } from 'react';
 
 // Mock User ID for now
 const MOCK_USER_ID = 'mock-admin-id';
 
-export default function AddVehiclePage() {
+export default async function AddVehiclePage() {
+    const [attributes, lots, marketingLabels] = await Promise.all([
+        getVehicleAttributes(),
+        getAccessibleLots(),
+        getMarketingLabels()
+    ]);
+
     return (
         <div className="min-h-screen bg-gray-100 py-8">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -16,7 +24,12 @@ export default function AddVehiclePage() {
                 </div>
 
                 <Suspense fallback={<div>Loading form...</div>}>
-                    <AddVehicleForm userId={MOCK_USER_ID} />
+                    <AddVehicleForm
+                        userId={MOCK_USER_ID}
+                        attributes={attributes}
+                        availableLots={lots}
+                        marketingLabels={marketingLabels}
+                    />
                 </Suspense>
             </div>
         </div>

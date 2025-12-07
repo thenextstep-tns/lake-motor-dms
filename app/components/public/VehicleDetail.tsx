@@ -29,9 +29,8 @@ export default function VehicleDetail({ vehicle }: VehicleDetailProps) {
     const testDriveEmbed = getEmbedUrl(vehicle.testDriveVideo);
 
     // Price Logic
-    const hasDiscount = vehicle.salePrice > 0 && vehicle.salePrice < vehicle.regularPrice;
-    const displayPrice = hasDiscount ? vehicle.salePrice : (vehicle.regularPrice > 0 ? vehicle.regularPrice : vehicle.salePrice);
-    const priceText = displayPrice > 0 ? `$${displayPrice.toLocaleString()}` : 'Call for Price';
+    const hasDiscount = vehicle.salePrice > 0 && vehicle.regularPrice > 0 && vehicle.salePrice < vehicle.regularPrice;
+    const priceText = (vehicle.salePrice && vehicle.salePrice > 0) ? `$${vehicle.salePrice.toLocaleString()}` : 'Call for Price';
 
     const handlePrevImage = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
         e?.stopPropagation();
@@ -239,7 +238,7 @@ export default function VehicleDetail({ vehicle }: VehicleDetailProps) {
                     {/* Right Column: Details */}
                     <div>
                         <h1 className="text-4xl font-bold mb-2">{vehicle.year} {vehicle.make} {vehicle.model}</h1>
-                        <div className="flex items-center gap-3 mb-6">
+                        <div className="flex flex-wrap items-center gap-3 mb-4">
                             <p className="text-xl text-gray-400">{vehicle.trim}</p>
                             {vehicle.status === 'ON_HOLD' && vehicle.deposits && vehicle.deposits.length > 0 && (
                                 <span className="bg-yellow-600 text-white text-xs font-bold px-2 py-1 rounded shadow-lg animate-pulse">
@@ -251,6 +250,16 @@ export default function VehicleDetail({ vehicle }: VehicleDetailProps) {
                                     SOLD
                                 </span>
                             )}
+                            {/* Marketing Labels */}
+                            {vehicle.marketingLabels && vehicle.marketingLabels.length > 0 && vehicle.marketingLabels.map((label: any) => (
+                                <span
+                                    key={label.id}
+                                    className="px-2 py-1 rounded text-xs font-bold uppercase tracking-wider text-black shadow-sm"
+                                    style={{ backgroundColor: label.colorCode }}
+                                >
+                                    {label.name}
+                                </span>
+                            ))}
                         </div>
 
                         <div className="bg-[#1a1a1a] p-6 rounded-lg mb-8 border border-gray-800">
@@ -259,7 +268,7 @@ export default function VehicleDetail({ vehicle }: VehicleDetailProps) {
                                 <div className="text-right">
                                     {hasDiscount && (
                                         <span className="block text-lg text-gray-500 line-through decoration-red-500 decoration-2">
-                                            ${vehicle.regularPrice.toLocaleString()}
+                                            ${vehicle.regularPrice?.toLocaleString()}
                                         </span>
                                     )}
                                     <span className="text-3xl font-bold text-yellow-500">

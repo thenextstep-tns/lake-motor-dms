@@ -30,6 +30,9 @@ model Company {
   inspections    Inspection[]
   tasks          Task[]
   deposits       Deposit[]
+  attributes     VehicleAttribute[]
+  marketingLabels MarketingLabel[]
+  vehicleHistory VehicleHistory[]
 }
 
 model CompanyContact {
@@ -263,6 +266,14 @@ model Vehicle {
   blackBook      Decimal?
   edmundsBook    Decimal?
   nadaBook       Decimal?
+  
+  // Start Pricing Refactor Fields
+  suggestedPrice Decimal?
+  carfaxPrice    Decimal?
+  carsDotComPrice Decimal?
+  cargurusPrice  Decimal?
+  // End Pricing Refactor Fields
+
   downPayment    Decimal?
   monthlyPayment Decimal?
   biWeeklyPayment Decimal?
@@ -286,33 +297,8 @@ model Vehicle {
   isNew              Boolean @default(false)
   isAsIs             Boolean @default(false)
   
-  // Description Builder Flags (Combined for brevity, but can be expanded if needed)
-  flagLowMiles       Boolean @default(false)
-  flagNonSmoker      Boolean @default(false)
-  flagFullService    Boolean @default(false)
-  flagMultiPoint     Boolean @default(false)
-  flagNeverWrecked   Boolean @default(false)
-  flagFullyEquipped  Boolean @default(false)
-  flagLuxury         Boolean @default(false)
-  flagPowerful       Boolean @default(false)
-  flagFuelEfficient  Boolean @default(false)
-  flagSporty         Boolean @default(false)
-  flagOffRoad        Boolean @default(false)
-  flagMechanicallyPerfect Boolean @default(false)
-  flagPerfectExterior Boolean @default(false)
-  flagPerfectInterior Boolean @default(false)
-  flagCleanExterior   Boolean @default(false)
-  flagCleanInterior   Boolean @default(false)
-  flagBelowBlueBook   Boolean @default(false)
-  flagLowMonthly      Boolean @default(false)
-  flagBhph            Boolean @default(false)
-  flagGuaranteedFin   Boolean @default(false)
-  flagCarfaxReport    Boolean @default(false)
-  flagCarfaxCertified Boolean @default(false)
-  flagCarfaxOneOwner  Boolean @default(false)
-  flagAutocheckReport Boolean @default(false)
-  flagAutocheckCert   Boolean @default(false)
-  flagAutocheckOne    Boolean @default(false)
+  // Marketing Overlay Labels
+  marketingLabels    MarketingLabel[]
 
   // SEO
   seoTitle       String?
@@ -333,6 +319,10 @@ model Vehicle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // New Toggles
+  hasGuarantee Boolean @default(false)
+  hasTitle     Boolean @default(true)
+
   // Relations
   images         VehicleImage[]
   serviceTickets ServiceTicket[]
@@ -340,6 +330,34 @@ model Vehicle {
   tasks          Task[]
   priceHistory   PriceHistory[]
   inspections    Inspection[]
+
+  // Accounting Refactor Fields
+  costPerLead        Decimal?
+  purchaseFee        Decimal? // Cost of Purchase
+  floorplanCost      Decimal? // Cost of Financing
+  transportationCost Decimal? // Transport / Delivery
+
+  // History Relation
+  history        VehicleHistory[]
+}
+
+model VehicleHistory {
+  id        String   @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle  @relation(fields: [vehicleId], references: [vin], onDelete: Cascade)
+  userId    String?  // ID of user who made the change
+  userName  String?  // Name of user who made the change (snapshot)
+  timestamp DateTime @default(now())
+  
+  field     String   // Field name that changed
+  oldValue  String?  // Stringified old value
+  newValue  String?  // Stringified new value
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  @@index([vehicleId])
+  @@index([companyId])
 }
 
 model VehicleImage {
@@ -507,4 +525,40 @@ model InspectionCode {
   
   inspectionId String
   inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+}
+
+model VehicleAttribute {
+  id        String   @id @default(cuid())
+  type      String   // COLOR, BODY_STYLE, FUEL_TYPE, CATEGORY, DRIVETRAIN, TRANS_TYPE
+  value     String
+  label     String?
+  
+  order     Int      @default(0)
+  
+  // Scoping: Null companyId means it's a System Default available to everyone
+  companyId String? 
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, value, companyId])
+}
+
+model MarketingLabel {
+  id          String   @id @default(cuid())
+  name        String
+  colorCode   String   @default("#000000") // Hex
+  
+  // Scoping: Null companyId means it's a System Default available to everyone
+  companyId   String? 
+  company     Company? @relation(fields: [companyId], references: [id])
+  
+  // Implicit many-to-many with Vehicle
+  vehicles    Vehicle[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, companyId])
 }

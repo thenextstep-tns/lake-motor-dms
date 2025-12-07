@@ -8,11 +8,27 @@ import { createInspection, updateInspection, deleteInspection, getDiagnosticCode
 import { getVehicleServiceHistory as getHistory } from '@/app/actions/service';
 import DepositModal from '@/app/components/inventory/DepositModal';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { VEHICLE_COLORS, VEHICLE_CATEGORIES, VEHICLE_FUEL_TYPES, VEHICLE_BODY_STYLES, VEHICLE_DRIVETRAINS, VEHICLE_TRANSMISSION_TYPES } from '@/app/domain/constants';
 
-export default function AddVehicleForm({ userId, initialData, onSuccess, availableLots = [] }: { userId: string, initialData?: any, onSuccess?: () => void, availableLots?: { id: string, name: string }[] }) {
+export default function AddVehicleForm({ userId, initialData, onSuccess, availableLots = [], attributes = [], marketingLabels = [] }: { userId: string, initialData?: any, onSuccess?: () => void, availableLots?: { id: string, name: string }[], attributes?: any[], marketingLabels?: any[] }) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    // ...
+
+    // Process Attributes from DB
+    const dbColors = attributes.filter(a => a.type === 'COLOR').map(a => a.value);
+    const dbCategories = attributes.filter(a => a.type === 'CATEGORY').map(a => a.value);
+    const dbFuel = attributes.filter(a => a.type === 'FUEL_TYPE').map(a => a.value);
+    const dbBody = attributes.filter(a => a.type === 'BODY_STYLE').map(a => a.value);
+    const dbDrivetrain = attributes.filter(a => a.type === 'DRIVETRAIN').map(a => a.value);
+
+    // Use DB values if present, else fallback to constants
+    const OPTION_COLORS = dbColors.length > 0 ? dbColors : VEHICLE_COLORS;
+    const OPTION_CATEGORIES = dbCategories.length > 0 ? dbCategories : VEHICLE_CATEGORIES;
+    const OPTION_FUEL = dbFuel.length > 0 ? dbFuel : VEHICLE_FUEL_TYPES;
+    const OPTION_BODY = dbBody.length > 0 ? dbBody : VEHICLE_BODY_STYLES;
+    const OPTION_DRIVETRAIN = dbDrivetrain.length > 0 ? dbDrivetrain : VEHICLE_DRIVETRAINS;
+
+    const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set(initialData?.marketingLabels?.map((l: any) => l.id) || []));
 
     const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'posting');
     const [loading, setLoading] = useState(false);
@@ -21,6 +37,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
     const [descriptionType, setDescriptionType] = useState('Regular');
     const [images, setImages] = useState(initialData?.images || []);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [isEditingDate, setIsEditingDate] = useState(false);
 
     // Inspection State
     const [inspections, setInspections] = useState(initialData?.inspections || []);
@@ -38,9 +55,16 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
     });
     const [newCode, setNewCode] = useState({ code: '', description: '' });
 
+
     // Service History State
     const [serviceHistory, setServiceHistory] = useState<any[]>([]);
 
+    // Audit History State
+    const [historyLogs, setHistoryLogs] = useState<any[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [historyPage, setHistoryPage] = useState(1);
+    const [historyTotalPages, setHistoryTotalPages] = useState(1);
+    const [historyFilters, setHistoryFilters] = useState<{ date?: string, author?: string }>({});
 
 
     const [formData, setFormData] = useState(initialData || {
@@ -49,40 +73,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
         bodyStyle: '', color: '', interiorColor: '', odometer: 0, condition: 'Used', status: 'PURCHASED', titleStatus: 'Clean', keyId: '',
         vehicleCaption: '', category: 'SUV', size: 'Midsize',
 
-        // Specs
-        engine: '', engineSize: '', engineCylinders: 4, transmission: '', transmissionType: 'Automatic', transmissionSpeeds: 6,
-        driveTrain: 'FWD', fuelType: 'Gas', doors: 4, cityMpg: 0, highwayMpg: 0,
-        interiorOemColor: '', exteriorOemColor: '',
-
-        // Equipment
-        vehicleEquipment: '', windowStickerEquipment: '',
-
-        // Logistics
-        location: 'Lake Motor Group LLC', salesPerson: 'Any / All', salesNotes: '', guarantee: '',
-        lotId: initialData?.lotId || '', // Ensure lotId is initialized
-        googleDriveUrl: '', walkaroundVideo: '', testDriveVideo: '',
-        plantCity: '', plantState: '', plantCountry: '', grossWeight: '',
-
-        // Flags
-        isFeatured: false, isCertified: false, isOneOwner: false, warrantyAvailable: false, financingAvailable: false,
-        isSold: false, isNew: false, isAsIs: false,
-
-        // Description Builder Flags
-        flagLowMiles: false, flagNonSmoker: false, flagFullService: false, flagMultiPoint: false, flagNeverWrecked: false,
-        flagFullyEquipped: false, flagLuxury: false, flagPowerful: false, flagFuelEfficient: false, flagSporty: false,
-        flagOffRoad: false, flagMechanicallyPerfect: false, flagPerfectExterior: false, flagPerfectInterior: false,
-        flagCleanExterior: false, flagCleanInterior: false, flagBelowBlueBook: false, flagLowMonthly: false,
-        flagBhph: false, flagGuaranteedFin: false, flagCarfaxReport: false, flagCarfaxCertified: false,
-        flagCarfaxOneOwner: false, flagAutocheckReport: false, flagAutocheckCert: false, flagAutocheckOne: false,
-
-        // Financials
-        purchasePrice: 0, salePrice: 0, regularPrice: 0, cashPrice: 0, wholesalePrice: 0, loanValue: 0, msrp: 0,
-        exportPrice: 0, blueBook: 0, blackBook: 0, edmundsBook: 0, nadaBook: 0,
-        downPayment: 0, monthlyPayment: 0, biWeeklyPayment: 0, weeklyPayment: 0,
-        vehicleCost: 0, repairCost: 0, bottomLinePrice: 0, preferredPriceText: 'Price', salePriceExpires: '',
-
-        // SEO
-        seoTitle: '', seoKeywords: '', seoDescription: ''
+        // ... (rest of formData unrelated)
     });
 
     useEffect(() => {
@@ -91,13 +82,92 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
         }
     }, [activeTab, formData.vin]);
 
+    useEffect(() => {
+        if (activeTab === 'history' && formData.vin) {
+            setLoadingHistory(true);
+            import('@/app/actions/vehicle').then(mod => {
+                mod.getVehicleHistory(formData.vin, historyPage, 50, historyFilters).then(result => {
+                    // Handle both old (array) and new (object) return types safely during refactor transition
+                    if (Array.isArray(result)) {
+                        setHistoryLogs(result);
+                        setHistoryTotalPages(1);
+                    } else {
+                        setHistoryLogs(result.logs);
+                        setHistoryTotalPages(result.pages);
+                    }
+                    setLoadingHistory(false);
+                }).catch(err => {
+                    console.error(err);
+                    setLoadingHistory(false);
+                });
+            });
+        }
+    }, [activeTab, formData.vin, historyPage, historyFilters]);
+
+    const getAge = (dateStr: string) => {
+        if (!dateStr) return 0;
+        const start = new Date(dateStr);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        end.setHours(0, 0, 0, 0);
+        const diffTime = end.getTime() - start.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays;
+    };
+
+    const handleDateSave = async () => {
+        if (!formData.createdAt) return;
+        setLoading(true);
+        try {
+            await updateVehicle(formData.vin, { ...formData, createdAt: formData.createdAt }, userId);
+            setIsEditingDate(false);
+            window.location.reload();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to update date');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRevertChange = async (logId: string) => {
+        if (!confirm('Are you sure you want to revert this change? This will overwrite the current field value.')) return;
+
+        try {
+            setLoadingHistory(true);
+            const { revertVehicleChange } = await import('@/app/actions/vehicle');
+            await revertVehicleChange(logId);
+            alert('Change reverted successfully.');
+            // Refresh
+            window.location.reload();
+        } catch (error) {
+            console.error(error);
+            alert('Failed to revert change: ' + (error instanceof Error ? error.message : 'Unknown'));
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
 
         setFormData((prev: any) => {
+            // For numbers, store string momentarily to allow "0.", ".5", and backspace to empty
+            // We'll parse/round on blur
+            const newValue = type === 'number' ? value : value;
+
+            // Auto-strip leading zeros strictly if it's "0" followed by a number (e.g. "01" -> "1")
+            // But allow "0." and "0" itself.
+            let finalValue = newValue;
+            if (type === 'number' && typeof newValue === 'string') {
+                if (newValue.length > 1 && newValue.startsWith('0') && newValue[1] !== '.') {
+                    finalValue = newValue.replace(/^0+/, '');
+                }
+            }
+
             const newData = {
                 ...prev,
-                [name]: type === 'number' ? parseFloat(value) || 0 : value
+                [name]: finalValue
             };
 
             // Auto-set Stock Number from VIN (last 6 digits)
@@ -322,15 +392,16 @@ ${footer}`;
 
         setLoading(true);
         try {
+            const labelIds = Array.from(selectedLabelIds);
             if (initialData) {
-                await updateVehicle(initialData.vin, formData, userId);
+                await updateVehicle(initialData.vin, formData, userId, labelIds);
                 if (onSuccess) {
                     onSuccess();
                 } else {
                     router.push('/inventory');
                 }
             } else {
-                await createVehicle(formData, userId);
+                await createVehicle(formData, userId, labelIds);
                 router.push('/inventory');
             }
         } catch (error) {
@@ -341,10 +412,25 @@ ${footer}`;
         }
     };
 
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        const { name, value, type } = e.target;
+        if (type === 'number' && value) {
+            const floatVal = parseFloat(value);
+            // Round to 2 decimal places
+            const rounded = Math.round((floatVal + Number.EPSILON) * 100) / 100;
+            setFormData((prev: any) => ({
+                ...prev,
+                [name]: rounded
+            }));
+        }
+    };
+
     const tabs = [
         { id: 'posting', label: 'Posting' },
         { id: 'service', label: 'Service & Inspections' },
         { id: 'deposits', label: 'Customers & Deposits' },
+        { id: 'accounting', label: 'Accounting & Costs' },
+        { id: 'history', label: 'History' },
     ];
 
     // Accordion State
@@ -456,6 +542,68 @@ ${footer}`;
 
     return (
         <div className="bg-white rounded-lg shadow-lg overflow-hidden font-sans text-gray-900">
+            {/* Header Info */}
+            <div className="bg-gray-50 border-b border-gray-200 p-6 flex items-start gap-6">
+                {/* Thumbnail */}
+                <div className="w-32 h-24 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0 relative border border-gray-300">
+                    {initialData?.images && initialData.images.length > 0 ? (
+                        <img
+                            src={`/api/images/${initialData.images[0].driveId}?thumbnail=true`}
+                            alt="Thumbnail"
+                            className="w-full h-full object-cover"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs text-center p-2">
+                            No Image
+                        </div>
+                    )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-grow">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-800">
+                                {formData.year} {formData.make} {formData.model} {formData.trim}
+                            </h1>
+                            <div className="flex items-center gap-3 mt-1 test-sm text-gray-500">
+                                <span className="font-mono bg-gray-200 px-2 py-0.5 rounded text-xs text-gray-700">{formData.vin || 'NO VIN'}</span>
+                                <span>•</span>
+                                <span>{formData.status}</span>
+                            </div>
+                        </div>
+                        <div className="text-right flex flex-col items-end gap-2">
+                            {initialData?.lot && (
+                                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full border border-blue-200">
+                                    {initialData.lot.name}
+                                </span>
+                            )}
+                            <div className="text-xs text-gray-500">
+                                {isEditingDate ? (
+                                    <div className="flex items-center gap-1">
+                                        <input
+                                            type="date"
+                                            value={formData.createdAt ? new Date(formData.createdAt).toISOString().split('T')[0] : ''}
+                                            onChange={(e) => setFormData((prev: any) => ({ ...prev, createdAt: e.target.value }))}
+                                            className="border border-gray-300 rounded px-1 py-0.5 text-xs"
+                                        />
+                                        <button onClick={handleDateSave} className="text-green-600 hover:text-green-800 font-bold">✓</button>
+                                        <button onClick={() => setIsEditingDate(false)} className="text-red-600 hover:text-red-800">✕</button>
+                                    </div>
+                                ) : (
+                                    <div className="group flex items-center gap-1 cursor-pointer" onClick={() => setIsEditingDate(true)} title="Click to edit date">
+                                        <span>Added: {formData.createdAt ? new Date(formData.createdAt).toLocaleDateString() : (initialData?.createdAt ? new Date(initialData.createdAt).toLocaleDateString() : 'New')}</span>
+                                        <svg className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    </div>
+                                )}
+                                <span className="mx-1">•</span>
+                                <span>Age: {getAge(formData.createdAt || initialData?.createdAt)} Days</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {/* Tabs */}
             <div className="flex justify-between items-center border-b border-gray-200 px-4">
                 <div className="flex overflow-x-auto">
@@ -532,7 +680,7 @@ ${footer}`;
                                                 </button>
                                             </div>
                                             <Select label="Status" name="status" value={formData.status} onChange={handleChange} options={['PURCHASED', 'DELIVERED', 'INSPECTED', 'IN_REPAIR', 'REPAIRED', 'DETAILED', 'PICTURED', 'POSTED', 'SOLD']} />
-                                            <Select label="Condition" name="condition" value={formData.condition} onChange={handleChange} options={['Used', 'New']} />
+                                            <Input label="Condition" name="condition" value={formData.condition} onChange={handleChange} placeholder="e.g. Used, New, Excellent" />
                                         </div>
 
                                         <Input label="Trim" name="trim" value={formData.trim} onChange={handleChange} />
@@ -557,23 +705,38 @@ ${footer}`;
                                         </div>
                                         <Input label="Miles" name="odometer" type="number" value={formData.odometer} onChange={handleChange} required />
                                         <Input label="Stock Number" name="stockNumber" value={formData.stockNumber} onChange={handleChange} />
-                                        <Select label="Title Status" name="titleStatus" value={formData.titleStatus} onChange={handleChange} options={['Clean', 'Salvage', 'Rebuilt', 'Lien']} />
+                                        <div className="flex items-end mb-2">
+                                            <Toggle label="Title (Yes/No)" name="hasTitle" checked={formData.hasTitle} onChange={handleCheckboxChange} />
+                                        </div>
 
-                                        <Select label="Body" name="bodyStyle" value={formData.bodyStyle} onChange={handleChange} options={['SUV', 'Sedan', 'Truck', 'Coupe', 'Van']} />
+                                        <Select label="Body" name="bodyStyle" value={formData.bodyStyle} onChange={handleChange} options={OPTION_BODY} />
                                         <Input label="Doors" name="doors" type="number" value={formData.doors} onChange={handleChange} />
-                                        <Select label="Fuel" name="fuelType" value={formData.fuelType} onChange={handleChange} options={['Gas', 'Diesel', 'Electric', 'Hybrid']} />
-                                        <Select label="Drive Train" name="driveTrain" value={formData.driveTrain} onChange={handleChange} options={['FWD', 'RWD', 'AWD', '4WD']} />
+                                        <Select label="Fuel" name="fuelType" value={formData.fuelType} onChange={handleChange} options={OPTION_FUEL} />
+                                        <Select label="Drive Train" name="driveTrain" value={formData.driveTrain} onChange={handleChange} options={OPTION_DRIVETRAIN} />
 
-                                        <Select label="Size" name="size" value={formData.size} onChange={handleChange} options={['Compact', 'Midsize', 'Fullsize']} />
-                                        <Select label="Category" name="category" value={formData.category} onChange={handleChange} options={['SUV', 'Car', 'Truck']} />
+                                        <Select label="Size" name="size" value={formData.size} onChange={handleChange} options={['Compact', 'Midsize', 'Fullsize', 'Large']} />
+                                        <Select label="Category" name="category" value={formData.category} onChange={handleChange} options={OPTION_CATEGORIES} />
 
                                         <Input label="City MPG" name="cityMpg" type="number" value={formData.cityMpg} onChange={handleChange} />
                                         <Input label="Highway MPG" name="highwayMpg" type="number" value={formData.highwayMpg} onChange={handleChange} />
 
                                         <Input label="Exterior OEM Color" name="exteriorOemColor" value={formData.exteriorOemColor} onChange={handleChange} />
                                         <Input label="Interior OEM Color" name="interiorOemColor" value={formData.interiorOemColor} onChange={handleChange} />
-                                        <Input label="Exterior Color" name="color" value={formData.color} onChange={handleChange} />
-                                        <Input label="Interior Color" name="interiorColor" value={formData.interiorColor} onChange={handleChange} />
+
+                                        <Select label="Exterior Color" name="color" value={formData.color} onChange={handleChange} options={OPTION_COLORS} />
+                                        <Select label="Interior Color" name="interiorColor" value={formData.interiorColor} onChange={handleChange} options={OPTION_COLORS} />
+
+                                        <div className="col-span-1 md:col-span-3 mt-4">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Sales Notes (Internal)</label>
+                                            <textarea
+                                                name="salesNotes"
+                                                value={formData.salesNotes || ''}
+                                                onChange={handleChange}
+                                                rows={3}
+                                                className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
+                                                placeholder="Private notes for sales team..."
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -610,31 +773,87 @@ ${footer}`;
                             )}
                         </div>
 
+
                         {/* Financials Section */}
                         <div className="border border-gray-200 rounded-lg overflow-hidden">
                             <SectionHeader id="financials" title="Pricing & Financials" />
                             {expandedSections.financials && (
                                 <div className="p-6 bg-white border-t border-gray-200">
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                        <Input label="Regular Price" name="regularPrice" type="number" value={formData.regularPrice} onChange={handleChange} />
-                                        <Input label="Sale Price" name="salePrice" type="number" value={formData.salePrice} onChange={handleChange} />
-                                        <Input label="Cash Price" name="cashPrice" type="number" value={formData.cashPrice} onChange={handleChange} />
-                                        <Input label="Export / Feed Price" name="exportPrice" type="number" value={formData.exportPrice} onChange={handleChange} />
+                                        <Input
+                                            label="Base Price (Regular)"
+                                            name="regularPrice"
+                                            type="number"
+                                            value={formData.regularPrice}
+                                            onChange={handleChange}
+                                            onBlur={handleBlur}
+                                        />
+                                        <Input
+                                            label="Current Price (Sale)"
+                                            name="salePrice"
+                                            type="number"
+                                            value={formData.salePrice}
+                                            onChange={handleChange}
+                                            onBlur={handleBlur}
+                                        />
+                                        <Input
+                                            label="Cash Price"
+                                            name="cashPrice"
+                                            type="number"
+                                            value={formData.cashPrice}
+                                            onChange={handleChange}
+                                            onBlur={handleBlur}
+                                        />
+                                        <Input
+                                            label="Export / Feed Price"
+                                            name="exportPrice"
+                                            type="number"
+                                            value={formData.exportPrice}
+                                            onChange={handleChange}
+                                            onBlur={handleBlur}
+                                        />
 
-                                        <Input label="Blue Book" name="blueBook" type="number" value={formData.blueBook} onChange={handleChange} />
-                                        <Input label="Black Book" name="blackBook" type="number" value={formData.blackBook} onChange={handleChange} />
-                                        <Input label="Edmunds Book" name="edmundsBook" type="number" value={formData.edmundsBook} onChange={handleChange} />
-                                        <Input label="NADA Book" name="nadaBook" type="number" value={formData.nadaBook} onChange={handleChange} />
+                                        <div className="col-span-4 border-t border-gray-100 my-2"></div>
+                                        <div className="col-span-4 mb-2">
+                                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Price Analysis & Suggestions</h4>
+                                        </div>
 
-                                        <Input label="Down Payment" name="downPayment" type="number" value={formData.downPayment} onChange={handleChange} />
-                                        <Input label="Monthly Payment" name="monthlyPayment" type="number" value={formData.monthlyPayment} onChange={handleChange} />
-                                        <Input label="Bi-Weekly Payment" name="biWeeklyPayment" type="number" value={formData.biWeeklyPayment} onChange={handleChange} />
-                                        <Input label="Weekly Payment" name="weeklyPayment" type="number" value={formData.weeklyPayment} onChange={handleChange} />
+                                        <div className="col-span-2 flex items-end gap-2">
+                                            <Input
+                                                label="Current Suggested Price"
+                                                name="suggestedPrice"
+                                                type="number"
+                                                value={formData.suggestedPrice || 0}
+                                                onChange={handleChange}
+                                                onBlur={handleBlur}
+                                                disabled // Read-only for now as per requirements
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setFormData((prev: any) => ({ ...prev, salePrice: prev.suggestedPrice || 0 }));
+                                                }}
+                                                className="mb-[2px] bg-blue-600 text-white px-3 py-2 rounded shadow hover:bg-blue-700 text-sm whitespace-nowrap h-[42px]"
+                                            >
+                                                Add to Current Price
+                                            </button>
+                                        </div>
 
-                                        <Input label="Vehicle Cost" name="vehicleCost" type="number" value={formData.vehicleCost} onChange={handleChange} />
-                                        <Input label="Repair Cost" name="repairCost" type="number" value={formData.repairCost} onChange={handleChange} />
-                                        <Input label="Bottom Line Price" name="bottomLinePrice" type="number" value={formData.bottomLinePrice} onChange={handleChange} />
-                                        <Input label="Wholesale Price" name="wholesalePrice" type="number" value={formData.wholesalePrice} onChange={handleChange} />
+                                        <div className="col-span-2"></div>
+
+                                        <Input label="Carfax Price" name="carfaxPrice" type="number" value={formData.carfaxPrice} onChange={handleChange} onBlur={handleBlur} />
+                                        <Input label="Cars.com Price" name="carsDotComPrice" type="number" value={formData.carsDotComPrice} onChange={handleChange} onBlur={handleBlur} />
+                                        <Input label="Cargurus Price" name="cargurusPrice" type="number" value={formData.cargurusPrice} onChange={handleChange} onBlur={handleBlur} />
+
+                                        <div className="col-span-4 border-t border-gray-100 my-2"></div>
+                                        <div className="col-span-4 mb-2">
+                                            <h4 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Book Values</h4>
+                                        </div>
+
+                                        <Input label="Blue Book" name="blueBook" type="number" value={formData.blueBook} onChange={handleChange} onBlur={handleBlur} />
+                                        <Input label="Black Book" name="blackBook" type="number" value={formData.blackBook} onChange={handleChange} onBlur={handleBlur} />
+                                        <Input label="Edmunds Book" name="edmundsBook" type="number" value={formData.edmundsBook} onChange={handleChange} onBlur={handleBlur} />
+                                        <Input label="NADA Book" name="nadaBook" type="number" value={formData.nadaBook} onChange={handleChange} onBlur={handleBlur} />
                                     </div>
                                 </div>
                             )}
@@ -642,7 +861,7 @@ ${footer}`;
 
                         {/* Logistics Section */}
                         <div className="border border-gray-200 rounded-lg overflow-hidden">
-                            <SectionHeader id="logistics" title="Logistics & Flags" />
+                            <SectionHeader id="logistics" title="Logistics" />
                             {expandedSections.logistics && (
                                 <div className="p-6 bg-white border-t border-gray-200">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -665,22 +884,9 @@ ${footer}`;
                                             </div>
                                         )}
 
-                                        <Input label="Location" name="location" value={formData.location} onChange={handleChange} />
-                                        <Input label="Sales Person" name="salesPerson" value={formData.salesPerson} onChange={handleChange} />
-
                                         <div className="col-span-1 md:col-span-2">
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Sales Notes (Internal)</label>
-                                            <textarea
-                                                name="salesNotes"
-                                                value={formData.salesNotes || ''}
-                                                onChange={handleChange}
-                                                rows={3}
-                                                className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
-                                                placeholder="Private notes for sales team..."
-                                            />
+                                            <Toggle label="Guarantee (Green Highlight)" name="hasGuarantee" checked={formData.hasGuarantee} onChange={handleCheckboxChange} />
                                         </div>
-
-                                        <Input label="Guarantee/Warranty Info" name="guarantee" value={formData.guarantee} onChange={handleChange} />
 
                                         <div className="col-span-1 md:col-span-2 mt-4">
                                             <h3 className="text-lg font-bold mb-4 text-gray-800">Manufacture Details</h3>
@@ -689,21 +895,6 @@ ${footer}`;
                                         <Input label="Plant State" name="plantState" value={formData.plantState || ''} onChange={handleChange} />
                                         <Input label="Plant Country" name="plantCountry" value={formData.plantCountry || ''} onChange={handleChange} />
                                         <Input label="Gross Weight (GVWR)" name="grossWeight" value={formData.grossWeight || ''} onChange={handleChange} />
-
-                                        <div className="col-span-1 md:col-span-2 mt-4">
-                                            <h3 className="text-lg font-bold mb-4 text-gray-800">Vehicle Flags</h3>
-                                        </div>
-                                        <div className="col-span-1 md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                            <Toggle label="Featured Vehicle" name="isFeatured" checked={formData.isFeatured} onChange={handleCheckboxChange} />
-                                            <Toggle label="One Owner Vehicle" name="isOneOwner" checked={formData.isOneOwner} onChange={handleCheckboxChange} />
-                                            <Toggle label="Certified Vehicle" name="isCertified" checked={formData.isCertified} onChange={handleCheckboxChange} />
-                                            <Toggle label="BHPH Financing Available" name="flagBhph" checked={formData.flagBhph} onChange={handleCheckboxChange} />
-                                            <Toggle label="Standard Warranty Available" name="warrantyAvailable" checked={formData.warrantyAvailable} onChange={handleCheckboxChange} />
-                                            <Toggle label="Extended Warranty Available" name="flagAutocheckCert" checked={formData.flagAutocheckCert} onChange={handleCheckboxChange} />
-                                            <Toggle label="As-Is / No Warranty" name="isAsIs" checked={formData.isAsIs} onChange={handleCheckboxChange} />
-                                            <Toggle label="Used" name="condition" checked={formData.condition === 'Used'} onChange={(e: any) => setFormData((prev: any) => ({ ...prev, condition: e.target.checked ? 'Used' : 'New' }))} />
-                                            <Toggle label="New" name="isNew" checked={formData.isNew} onChange={handleCheckboxChange} />
-                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -719,34 +910,37 @@ ${footer}`;
                                             <h3 className="text-lg font-bold mb-4 text-gray-800">Auto Text Description Builder</h3>
                                         </div>
 
-                                        <div className="grid grid-cols-3 gap-4 mb-6">
-                                            <Toggle label="One Owner" name="isOneOwner" checked={formData.isOneOwner} onChange={handleCheckboxChange} />
-                                            <Toggle label="Powerful Engine" name="flagPowerful" checked={formData.flagPowerful} onChange={handleCheckboxChange} />
-                                            <Toggle label="Below Blue Book" name="flagBelowBlueBook" checked={formData.flagBelowBlueBook} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Low Miles" name="flagLowMiles" checked={formData.flagLowMiles} onChange={handleCheckboxChange} />
-                                            <Toggle label="Fuel Efficient" name="flagFuelEfficient" checked={formData.flagFuelEfficient} onChange={handleCheckboxChange} />
-                                            <Toggle label="Low Monthly Payments" name="flagLowMonthly" checked={formData.flagLowMonthly} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Non-Smoker" name="flagNonSmoker" checked={formData.flagNonSmoker} onChange={handleCheckboxChange} />
-                                            <Toggle label="Sporty Handling" name="flagSporty" checked={formData.flagSporty} onChange={handleCheckboxChange} />
-                                            <Toggle label="BHPH Financing" name="flagBhph" checked={formData.flagBhph} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Full Service History" name="flagFullService" checked={formData.flagFullService} onChange={handleCheckboxChange} />
-                                            <Toggle label="Off-Road Ready" name="flagOffRoad" checked={formData.flagOffRoad} onChange={handleCheckboxChange} />
-                                            <Toggle label="Guaranteed Financing" name="flagGuaranteedFin" checked={formData.flagGuaranteedFin} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Multi-Point Inspected" name="flagMultiPoint" checked={formData.flagMultiPoint} onChange={handleCheckboxChange} />
-                                            <Toggle label="Mechanically Perfect" name="flagMechanicallyPerfect" checked={formData.flagMechanicallyPerfect} onChange={handleCheckboxChange} />
-                                            <Toggle label="Carfax Report" name="flagCarfaxReport" checked={formData.flagCarfaxReport} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Never Wrecked" name="flagNeverWrecked" checked={formData.flagNeverWrecked} onChange={handleCheckboxChange} />
-                                            <Toggle label="Perfect Exterior" name="flagPerfectExterior" checked={formData.flagPerfectExterior} onChange={handleCheckboxChange} />
-                                            <Toggle label="Carfax Certified" name="flagCarfaxCertified" checked={formData.flagCarfaxCertified} onChange={handleCheckboxChange} />
-
-                                            <Toggle label="Standard Warranty" name="warrantyAvailable" checked={formData.warrantyAvailable} onChange={handleCheckboxChange} />
-                                            <Toggle label="Perfect Interior" name="flagPerfectInterior" checked={formData.flagPerfectInterior} onChange={handleCheckboxChange} />
-                                            <Toggle label="Carfax One Owner" name="flagCarfaxOneOwner" checked={formData.flagCarfaxOneOwner} onChange={handleCheckboxChange} />
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                                            {marketingLabels.length === 0 ? (
+                                                <div className="col-span-3 text-center text-gray-500 italic py-4">
+                                                    No marketing labels found. Admins can add them in Settings.
+                                                </div>
+                                            ) : (
+                                                marketingLabels.map((label: any) => (
+                                                    <div
+                                                        key={label.id}
+                                                        className={`flex items-center space-x-3 border p-3 rounded-lg cursor-pointer transition-all ${selectedLabelIds.has(label.id) ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'hover:bg-gray-50 border-gray-200'}`}
+                                                        onClick={() => {
+                                                            const newSet = new Set(selectedLabelIds);
+                                                            if (newSet.has(label.id)) {
+                                                                newSet.delete(label.id);
+                                                            } else {
+                                                                newSet.add(label.id);
+                                                            }
+                                                            setSelectedLabelIds(newSet);
+                                                        }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedLabelIds.has(label.id)}
+                                                            readOnly
+                                                            className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
+                                                        />
+                                                        <div className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: label.colorCode }}></div>
+                                                        <span className="text-sm font-medium text-gray-700 select-none">{label.name}</span>
+                                                    </div>
+                                                ))
+                                            )}
                                         </div>
 
                                         <div className="flex gap-4 items-end mb-4">
@@ -1337,6 +1531,245 @@ ${footer}`;
                     )
                 }
 
+                {/* Accounting & Costs Tab */}
+                {activeTab === 'accounting' && (
+                    <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-lg border border-gray-200">
+                            <h3 className="text-lg font-bold mb-4 text-gray-800">Vehicle P&L Analysis</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Costs */}
+                                <div className="space-y-4">
+                                    <h4 className="font-semibold text-gray-500 uppercase text-xs tracking-wider">Costs</h4>
+                                    <Input label="Purchase Price" name="purchasePrice" type="number" value={formData.purchasePrice} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Cost of Purchase (Fee)" name="purchaseFee" type="number" value={formData.purchaseFee} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Service / Repair Cost" name="repairCost" type="number" value={formData.repairCost} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Cost Per Lead" name="costPerLead" type="number" value={formData.costPerLead} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Floorplan / Financing" name="floorplanCost" type="number" value={formData.floorplanCost} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Transportation / Delivery" name="transportationCost" type="number" value={formData.transportationCost} onChange={handleChange} onBlur={handleBlur} />
+                                    <Input label="Other Vehicle Cost" name="vehicleCost" type="number" value={formData.vehicleCost} onChange={handleChange} onBlur={handleBlur} />
+                                </div>
+
+                                {/* Financial Snapshot Panel (Right Side) */}
+                                <div className="col-span-1 md:col-span-2 bg-gray-50 rounded-xl p-6 border border-gray-200">
+                                    <h4 className="text-gray-900 font-bold mb-4 flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                        Financial Snapshot
+                                    </h4>
+
+                                    {/* Profit Card */}
+                                    <div className={`p-5 rounded-lg border-l-4 mb-6 shadow-sm bg-white ${(Number(formData.salePrice || 0) - (Number(formData.purchasePrice || 0) + Number(formData.purchaseFee || 0) + Number(formData.repairCost || 0) + Number(formData.costPerLead || 0) + Number(formData.floorplanCost || 0) + Number(formData.transportationCost || 0) + Number(formData.vehicleCost || 0))) >= 0
+                                        ? 'border-green-500'
+                                        : 'border-red-500'
+                                        }`}>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">Net Profit</p>
+                                                <div className={`text-3xl font-extrabold mt-1 ${(Number(formData.salePrice || 0) - (Number(formData.purchasePrice || 0) + Number(formData.purchaseFee || 0) + Number(formData.repairCost || 0) + Number(formData.costPerLead || 0) + Number(formData.floorplanCost || 0) + Number(formData.transportationCost || 0) + Number(formData.vehicleCost || 0))) >= 0
+                                                    ? 'text-green-600'
+                                                    : 'text-red-600'
+                                                    }`}>
+                                                    ${(Number(formData.salePrice || 0) - (Number(formData.purchasePrice || 0) + Number(formData.purchaseFee || 0) + Number(formData.repairCost || 0) + Number(formData.costPerLead || 0) + Number(formData.floorplanCost || 0) + Number(formData.transportationCost || 0) + Number(formData.vehicleCost || 0))).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-xs text-gray-400 mb-1">Sale Price</p>
+                                                <p className="font-semibold text-gray-700">${Number(formData.salePrice || 0).toLocaleString()}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Metrics Grid */}
+                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                        <div className="bg-white p-3 rounded border border-gray-100">
+                                            <p className="text-xs text-gray-500 mb-1">Total Costs</p>
+                                            <p className="text-lg font-bold text-gray-800">
+                                                ${(Number(formData.purchasePrice || 0) + Number(formData.purchaseFee || 0) + Number(formData.repairCost || 0) + Number(formData.costPerLead || 0) + Number(formData.floorplanCost || 0) + Number(formData.transportationCost || 0) + Number(formData.vehicleCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                            </p>
+                                        </div>
+                                        <div className="bg-white p-3 rounded border border-gray-100">
+                                            <p className="text-xs text-gray-500 mb-1">Days in Stock</p>
+                                            <p className="text-lg font-bold text-gray-800">
+                                                {initialData?.createdAt
+                                                    ? Math.floor((new Date().getTime() - new Date(initialData.createdAt).getTime()) / (1000 * 3600 * 24))
+                                                    : 0}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Depreciation Analysis */}
+                                    <div className="space-y-4">
+                                        <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <p className="text-sm font-semibold text-orange-800">Est. Depreciation</p>
+                                                <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full">$40 / day</span>
+                                            </div>
+                                            <div className="flex justify-between items-end">
+                                                <p className="text-xl font-bold text-orange-900">
+                                                    -${((initialData?.createdAt
+                                                        ? Math.floor((new Date().getTime() - new Date(initialData.createdAt).getTime()) / (1000 * 3600 * 24))
+                                                        : 0) * 40).toLocaleString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 border-t border-gray-100 pt-4 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <Input label="Wholesale Price" name="wholesalePrice" type="number" value={formData.wholesalePrice} onChange={handleChange} onBlur={handleBlur} />
+                                <Input label="Bottom Line Price" name="bottomLinePrice" type="number" value={formData.bottomLinePrice} onChange={handleChange} onBlur={handleBlur} />
+                            </div>
+
+                        </div>
+                    </div>
+                )}
+
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                    <div className="bg-white p-6 rounded-lg border border-gray-200">
+                        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                            <h3 className="text-lg font-bold text-gray-800">Audit Log & History</h3>
+
+                            {/* Filters */}
+                            <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+                                <div className="flex items-center gap-1 border border-gray-300 rounded px-2 py-1 bg-white">
+                                    <span className="text-gray-400 text-xs text-nowrap">From:</span>
+                                    <input
+                                        type="date"
+                                        className="text-sm text-gray-700 outline-none w-28"
+                                        value={historyFilters.startDate || ''}
+                                        onChange={(e) => setHistoryFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1 border border-gray-300 rounded px-2 py-1 bg-white">
+                                    <span className="text-gray-400 text-xs text-nowrap">To:</span>
+                                    <input
+                                        type="date"
+                                        className="text-sm text-gray-700 outline-none w-28"
+                                        value={historyFilters.endDate || ''}
+                                        onChange={(e) => setHistoryFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                                    />
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="User..."
+                                    className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 w-24"
+                                    value={historyFilters.author || ''}
+                                    onChange={(e) => setHistoryFilters(prev => ({ ...prev, author: e.target.value }))}
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Field..."
+                                    className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 w-24"
+                                    value={historyFilters.field || ''}
+                                    onChange={(e) => setHistoryFilters(prev => ({ ...prev, field: e.target.value }))}
+                                />
+                                {(historyFilters.startDate || historyFilters.endDate || historyFilters.author || historyFilters.field) && (
+                                    <button
+                                        onClick={() => setHistoryFilters({})}
+                                        className="text-xs text-red-600 hover:text-red-800 underline ml-1"
+                                    > (Clear) </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {loadingHistory ? (
+                            <div className="text-center py-12">
+                                <div className="inline-block animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mb-2"></div>
+                                <p className="text-gray-500 text-sm">Loading history...</p>
+                            </div>
+                        ) : historyLogs.length === 0 ? (
+                            <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                                <p className="text-gray-500">No history found matching your filters.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="overflow-hidden bg-white rounded-lg border border-gray-200 shadow-sm">
+                                    <table className="min-w-full">
+                                        <tbody className="bg-white divide-y divide-gray-100">
+                                            {Object.entries(historyLogs.reduce((groups: Record<string, any[]>, log: any) => {
+                                                const date = new Date(log.timestamp);
+                                                const key = `${date.toLocaleDateString()} ${date.getHours()}:${(date.getMinutes() < 10 ? '0' : '') + date.getMinutes()} - ${log.userName}`;
+                                                if (!groups[key]) groups[key] = [];
+                                                groups[key].push(log);
+                                                return groups;
+                                            }, {})).map(([groupKey, logs]: [string, any[]]) => {
+                                                const [timeStr, userStr] = groupKey.split(' - ');
+                                                return (
+                                                    <tr key={groupKey}>
+                                                        <td className="p-0">
+                                                            <div className="w-full">
+                                                                <div className="bg-gray-50 px-4 py-2 flex justify-between items-center border-l-4 border-blue-400">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="font-semibold text-gray-800 text-sm">{userStr}</span>
+                                                                        <span className="text-gray-400 text-xs">•</span>
+                                                                        <span className="text-gray-500 text-xs font-mono">{timeStr}</span>
+                                                                    </div>
+                                                                    <span className="text-[10px] uppercase font-bold tracking-wider text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded-full shadow-sm">
+                                                                        {logs.length} update{logs.length !== 1 ? 's' : ''}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="divide-y divide-gray-50">
+                                                                    {logs.map(log => (
+                                                                        <div key={log.id} className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                                                                            <div className="flex items-center gap-4 flex-1 overflow-hidden">
+                                                                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700 w-32 justify-center border border-blue-100 shrink-0">
+                                                                                    {log.field}
+                                                                                </span>
+                                                                                <div className="flex items-center text-sm gap-3 overflow-hidden">
+                                                                                    <span className="text-red-400 line-through truncate max-w-[120px] md:max-w-[200px]" title={log.oldValue}>{log.oldValue || '—'}</span>
+                                                                                    <svg className="w-3 h-3 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                                                                                    <span className="text-green-600 font-semibold truncate max-w-[120px] md:max-w-[200px]" title={log.newValue}>{log.newValue || '—'}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            {log.field !== 'CREATION' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRevertChange(log.id)}
+                                                                                    className="ml-4 text-xs font-medium text-gray-500 hover:text-red-600 underline opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                                >
+                                                                                    Revert
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Pagination Controls */}
+                                <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+                                    <span className="text-sm text-gray-500">
+                                        Page <span className="font-medium text-gray-900">{historyPage}</span> of <span className="font-medium text-gray-900">{historyTotalPages || 1}</span>
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                            disabled={historyPage <= 1}
+                                            className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+                                            disabled={historyPage >= historyTotalPages}
+                                            className="px-3 py-1 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
                     <button
                         type="button"
@@ -1354,7 +1787,7 @@ ${footer}`;
                     </button>
                 </div>
 
-            </form >
+            </form>
 
             {initialData && (
                 <DepositModal

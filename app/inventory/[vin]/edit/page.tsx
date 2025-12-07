@@ -1,4 +1,4 @@
-import { getVehicleByVin } from '@/app/actions/vehicle';
+import { getVehicleByVin, getVehicleAttributes, getMarketingLabels } from '@/app/actions/vehicle';
 import { getAccessibleLots } from '@/app/actions/settings';
 import AddVehicleForm from '@/app/inventory/add/AddVehicleForm';
 import { notFound } from 'next/navigation';
@@ -8,9 +8,11 @@ export const dynamic = 'force-dynamic';
 
 export default async function EditVehiclePage({ params }: { params: Promise<{ vin: string }> }) {
     const { vin } = await params;
-    const [vehicle, lots] = await Promise.all([
+    const [vehicle, lots, attributes, marketingLabels] = await Promise.all([
         getVehicleByVin(vin),
-        getAccessibleLots()
+        getAccessibleLots(),
+        getVehicleAttributes(),
+        getMarketingLabels()
     ]);
 
     if (!vehicle) {
@@ -35,6 +37,8 @@ export default async function EditVehiclePage({ params }: { params: Promise<{ vi
                         userId={MOCK_USER_ID}
                         initialData={vehicle}
                         availableLots={lots}
+                        attributes={attributes}
+                        marketingLabels={marketingLabels}
                     />
                 </Suspense>
             </div>

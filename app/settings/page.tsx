@@ -73,6 +73,21 @@ export default function SettingsPage() {
                     <h3 className="text-lg font-medium text-gray-900 group-hover:text-orange-600 transition-colors">Lot Management</h3>
                     <p className="mt-2 text-sm text-gray-500">Manage dealer lots and assign user access.</p>
                 </Link>
+                {/* Marketing Settings */}
+                <Link
+                    href="/settings/marketing"
+                    className="block p-6 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow cursor-pointer group"
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-pink-50 rounded-lg group-hover:bg-pink-100 transition-colors">
+                            <svg className="w-6 h-6 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 group-hover:text-pink-600 transition-colors">Marketing & Labels</h3>
+                    <p className="mt-2 text-sm text-gray-500">Manage vehicle marketing labels, tags, and display options.</p>
+                </Link>
             </div>
         </div>
     );

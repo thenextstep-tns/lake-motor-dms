@@ -29,7 +29,9 @@ function serializeVehicle(vehicle: any) {
         'purchasePrice', 'salePrice', 'regularPrice', 'cashPrice', 'wholesalePrice',
         'loanValue', 'msrp', 'exportPrice', 'blueBook', 'blackBook', 'edmundsBook',
         'nadaBook', 'downPayment', 'monthlyPayment', 'biWeeklyPayment', 'weeklyPayment',
-        'vehicleCost', 'repairCost', 'bottomLinePrice', 'tax', 'total', 'balance'
+        'vehicleCost', 'repairCost', 'bottomLinePrice', 'tax', 'total', 'balance',
+        'suggestedPrice', 'carfaxPrice', 'carsDotComPrice', 'cargurusPrice',
+        'costPerLead', 'purchaseFee', 'floorplanCost', 'transportationCost'
     ];
 
     const serialized = { ...vehicle };
@@ -100,7 +102,8 @@ export async function getVehicles(lotId?: string) {
             inspections: {
                 include: { codes: true },
                 orderBy: { date: 'desc' }
-            }
+            },
+            marketingLabels: true
         },
     });
     return vehicles.map(serializeVehicle);
@@ -114,6 +117,7 @@ async function getUserContext() {
     }
     return {
         id: session.user.id,
+        name: session.user.name || session.user.email || 'Unknown User', // Added name for logging
         companyId: session.user.companyId,
         lotId: session.user.lotId,
         roles: session.user.roles,
@@ -121,13 +125,24 @@ async function getUserContext() {
     };
 }
 
-export async function createVehicle(data: any, _userId?: string) {
+export async function createVehicle(data: any, _userId?: string, marketingLabelIds: string[] = []) {
     const user = await getUserContext();
-    // Verify permissions if needed, e.g. PermissionService.require(user, ActionType.Create, ResourceType.Vehicle)
+    // Verify permissions if needed
 
     // Sanitize data
-    // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, marketingLabels, ...rest } = data;
+
+    // Keys to remove (deleted flags)
+    const deletedFlags = [
+        'flagLowMiles', 'flagNonSmoker', 'flagFullService', 'flagMultiPoint', 'flagNeverWrecked',
+        'flagFullyEquipped', 'flagLuxury', 'flagPowerful', 'flagFuelEfficient', 'flagSporty',
+        'flagOffRoad', 'flagMechanicallyPerfect', 'flagPerfectExterior', 'flagPerfectInterior',
+        'flagCleanExterior', 'flagCleanInterior', 'flagBelowBlueBook', 'flagLowMonthly',
+        'flagBhph', 'flagGuaranteedFin', 'flagCarfaxReport', 'flagCarfaxCertified',
+        'flagCarfaxOneOwner', 'flagAutocheckReport', 'flagAutocheckCert', 'flagAutocheckOne'
+    ];
+
+    deletedFlags.forEach(flag => delete rest[flag]);
 
     const sanitizedData = {
         ...rest,
@@ -142,11 +157,32 @@ export async function createVehicle(data: any, _userId?: string) {
         // Inject Tenancy
         companyId: user.companyId,
         lotId: data.lotId || user.lotId,
+        // Explicit casts for new toggles
+        hasGuarantee: Boolean(data.hasGuarantee),
+        hasTitle: Boolean(data.hasTitle),
+        condition: String(data.condition || 'Used'),
+        // Connect Labels
+        marketingLabels: {
+            connect: marketingLabelIds.map(id => ({ id }))
+        }
     };
 
     const vehicle = await prisma.vehicle.create({
         data: sanitizedData,
     });
+
+    // Initial Log
+    await prisma.vehicleHistory.create({
+        data: {
+            vehicleId: vehicle.vin,
+            userId: user.id,
+            userName: user.name,
+            companyId: user.companyId,
+            field: 'CREATION',
+            newValue: 'Vehicle Created'
+        }
+    });
+
     revalidatePath('/inventory');
     return serializeVehicle(vehicle);
 }
@@ -155,30 +191,33 @@ export async function updateVehicleStatus(vin: string, newStatus: string, _userI
     const user = await getUserContext();
 
     const vehicle = await prisma.vehicle.findFirst({
-        where: {
-            vin,
-            companyId: user.companyId // Scope check
-        }
+        where: { vin, companyId: user.companyId }
     });
     if (!vehicle) throw new Error('Vehicle not found or access denied');
-
-    const allowedTransitions = STATUS_TRANSITIONS[vehicle.status] || [];
-    // Allow admin to force any status if needed, but let's stick to transitions for now
-    // Or just allow it since we added ON_HOLD
-    // if (!allowedTransitions.includes(newStatus)) {
-    //     throw new Error(`Invalid transition from ${vehicle.status} to ${newStatus}`);
-    // }
 
     const updatedVehicle = await prisma.vehicle.update({
         where: { vin },
         data: { status: newStatus },
     });
 
+    // Log Log
+    await prisma.vehicleHistory.create({
+        data: {
+            vehicleId: vin,
+            userId: user.id,
+            userName: user.name,
+            companyId: user.companyId,
+            field: 'status',
+            oldValue: vehicle.status,
+            newValue: newStatus
+        }
+    });
+
     revalidatePath('/inventory');
     return serializeVehicle(updatedVehicle);
 }
 
-export async function updateVehicle(vin: string, data: any, _userId?: string) {
+export async function updateVehicle(vin: string, data: any, _userId?: string, marketingLabelIds: string[] = []) {
     const user = await getUserContext();
 
     // Verify ownership
@@ -188,24 +227,137 @@ export async function updateVehicle(vin: string, data: any, _userId?: string) {
     if (!existing) throw new Error("Vehicle not found or access denied");
 
     // Sanitize data
-    // Remove fields that are not in the Prisma schema or are relations
-    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, ...rest } = data;
+    const { country, plant, images, serviceTickets, priceHistory, deposits, inspections, marketingLabels, ...rest } = data;
+
+    // Keys to remove (deleted flags)
+    const deletedFlags = [
+        'flagLowMiles', 'flagNonSmoker', 'flagFullService', 'flagMultiPoint', 'flagNeverWrecked',
+        'flagFullyEquipped', 'flagLuxury', 'flagPowerful', 'flagFuelEfficient', 'flagSporty',
+        'flagOffRoad', 'flagMechanicallyPerfect', 'flagPerfectExterior', 'flagPerfectInterior',
+        'flagCleanExterior', 'flagCleanInterior', 'flagBelowBlueBook', 'flagLowMonthly',
+        'flagBhph', 'flagGuaranteedFin', 'flagCarfaxReport', 'flagCarfaxCertified',
+        'flagCarfaxOneOwner', 'flagAutocheckReport', 'flagAutocheckCert', 'flagAutocheckOne'
+    ];
+
+    deletedFlags.forEach(flag => delete rest[flag]);
+    // Explicitly remove system fields and relations we don't want to scalar-update or that clash
+    const {
+        id, createdAt, updatedAt, deletedAt, deletedBy, markedForDeletion,
+        company, lot, history, lotId,
+        ...safeRest
+    } = rest as any;
 
     const sanitizedData = {
-        ...rest,
+        ...safeRest,
         salePriceExpires: data.salePriceExpires ? new Date(data.salePriceExpires) : null,
         year: parseInt(data.year) || 2024,
         odometer: parseInt(data.odometer) || 0,
         engineCylinders: data.engineCylinders ? parseInt(data.engineCylinders) : null,
         doors: data.doors ? parseInt(data.doors) : null,
-        lotId: data.lotId, // Explicitly allow lotId update
         transmissionSpeeds: data.transmissionSpeeds ? parseInt(data.transmissionSpeeds) : null,
         cityMpg: data.cityMpg ? parseInt(data.cityMpg) : null,
         highwayMpg: data.highwayMpg ? parseInt(data.highwayMpg) : null,
+
+        // Handle Lot Relationship Explicitly using Relation Input
+        lot: data.lotId ? { connect: { id: data.lotId } } : (data.lotId === null || data.lotId === '' ? { disconnect: true } : undefined),
+
+        // Set Labels
+        marketingLabels: {
+            set: marketingLabelIds.map(id => ({ id }))
+        }
     };
 
+    // Final safety: delete companyId/lotId from rest if they stuck around (though we destructured above)
+    if ('companyId' in sanitizedData) delete (sanitizedData as any).companyId;
+
+    // --- Audit Logging Logic ---
+    const historyEntries = [];
+
+    // Compare simplistic text/number fields
+    // We'll simplisticly iterate sanitizedData keys.
+    // Note: Some keys in sanitizedData might not exist in 'existing' if they are relations (but we destructured those out mostly)
+
+    for (const key of Object.keys(sanitizedData)) {
+        if (key === 'marketingLabels' || key === 'companyId') continue; // Skip complex/system fields
+
+        const newVal = sanitizedData[key];
+        const oldVal = (existing as any)[key];
+
+        let oldStr = oldVal;
+        let newStr = newVal;
+
+        // Custom handling for 'lot' relation
+        if (key === 'lot') {
+            // existing uses 'lotId' (not 'lot' object usually), but let's check both
+            oldStr = (existing as any).lotId || (existing as any).lot?.id || 'None';
+
+            // newVal is { connect: { id: ... } } or { disconnect: true }
+            if (newVal && typeof newVal === 'object') {
+                if ('connect' in newVal && newVal.connect?.id) {
+                    newStr = newVal.connect.id;
+                } else if ('disconnect' in newVal) {
+                    newStr = 'None';
+                }
+            }
+        } else {
+            // General Handling
+            if (oldVal && typeof oldVal === 'object' && 'toNumber' in oldVal) {
+                oldStr = oldVal.toNumber(); // Convert Decimal to number
+            }
+            // Date handling
+            if (oldVal instanceof Date) oldStr = oldVal.toISOString();
+            if (newVal instanceof Date) newStr = newVal.toISOString();
+        }
+
+        // Normalize values for comparison
+        // Treat null, undefined, "", and 0 (for numbers) carefully
+        const normalize = (val: any) => {
+            if (val === null || val === undefined) return '';
+            if (typeof val === 'number') return val.toString();
+            if (typeof val === 'string') return val.trim();
+            if (typeof val === 'boolean') return val ? 'Yes' : 'No'; // Nice boolean readout
+            if (typeof val === 'object') return JSON.stringify(val); // Fallback to avoid [object Object]
+            return String(val);
+        };
+
+        const oldNorm = normalize(oldStr);
+        const newNorm = normalize(newStr);
+
+        // Special case: if both normalize to "0" or empty, consider them same?
+        // E.g. DB has 0, Form sends "0" -> both are "0". OK.
+        // DB has null, Form sends 0 (e.g. price) -> "" vs "0". Changed.
+        // DB has 0, Form sends "" -> "0" vs "". Changed.
+
+        // However, user complained about 0 -> 0.
+        // If oldVal was 0 (number) -> "0"
+        // If newVal was 0 (number) -> "0"
+        // If strict equality passes, continue.
+        if (oldNorm === newNorm) continue;
+
+        // Ignore "0" to 0 number diffs if loose equality holds?
+        // Actually, let's catch the specific case of loose "0" == 0
+        // If we strictly compare formatted strings, we are safe.
+
+        historyEntries.push({
+            vehicleId: vin,
+            userId: user.id,
+            userName: user.name,
+            companyId: user.companyId,
+            field: key,
+            oldValue: String(oldStr ?? ''),
+            newValue: String(newStr ?? '')
+        });
+    }
+
+    if (historyEntries.length > 0) {
+        await prisma.vehicleHistory.createMany({
+            data: historyEntries
+        });
+    }
+    // ---------------------------
+
     const vehicle = await prisma.vehicle.update({
-        where: { vin }, // VIN is unique globally, but we checked ownership above
+        where: { vin },
         data: sanitizedData,
         include: { images: true }
     });
@@ -230,7 +382,8 @@ export async function getVehicleByVin(vin: string) {
             inspections: {
                 include: { codes: true },
                 orderBy: { date: 'desc' }
-            }
+            },
+            marketingLabels: true
         }
     });
     return serializeVehicle(vehicle);
@@ -416,4 +569,208 @@ export async function decodeVin(vin: string) {
         console.error('VIN Decode Error:', error);
         return null;
     }
+}
+
+import { VEHICLE_COLORS, VEHICLE_CATEGORIES, VEHICLE_FUEL_TYPES, VEHICLE_BODY_STYLES, VEHICLE_DRIVETRAINS } from '@/app/domain/constants';
+
+export async function getVehicleAttributes() {
+    // 1. Fetch from DB
+    const attributes = await prisma.vehicleAttribute.findMany({
+        where: { companyId: null },
+        orderBy: { order: 'asc' }
+    });
+
+    // 2. Lazy Seed if empty (System Defaults)
+    if (attributes.length === 0) {
+        console.log("Lazy Seeding Vehicle Attributes...");
+        const seedMaps = [
+            { type: 'COLOR', list: VEHICLE_COLORS },
+            { type: 'CATEGORY', list: VEHICLE_CATEGORIES },
+            { type: 'FUEL_TYPE', list: VEHICLE_FUEL_TYPES },
+            { type: 'BODY_STYLE', list: VEHICLE_BODY_STYLES },
+            { type: 'DRIVETRAIN', list: VEHICLE_DRIVETRAINS },
+        ];
+
+        for (const { type, list } of seedMaps) {
+            let order = 0;
+            // Use sequential loop to ensure order
+            for (const value of list) {
+                const exists = await prisma.vehicleAttribute.findFirst({
+                    where: { type, value, companyId: null }
+                });
+                if (!exists) {
+                    await prisma.vehicleAttribute.create({
+                        data: {
+                            type,
+                            value,
+                            label: value,
+                            order: order++,
+                            companyId: null
+                        }
+                    });
+                }
+            }
+        }
+
+        // Refetch
+        return await prisma.vehicleAttribute.findMany({
+            where: { companyId: null },
+            orderBy: { order: 'asc' }
+        });
+    }
+
+    return attributes;
+}
+
+export async function getMarketingLabels(companyId?: string) {
+    // 1. Fetch System Defaults (companyId: null) AND Company Specific
+    const whereClause: any = { companyId: null };
+    if (companyId) {
+        whereClause.OR = [{ companyId: null }, { companyId }];
+    }
+
+    let labels = await prisma.marketingLabel.findMany({
+        where: whereClause,
+        orderBy: { name: 'asc' }
+    });
+
+    // 2. Lazy Seed System Defaults if empty
+    const systemLabels = labels.filter(l => l.companyId === null);
+    if (systemLabels.length === 0) {
+        console.log("Lazy Seeding Marketing Labels...");
+        const defaults = [
+            { name: 'One Owner', colorCode: '#FFD700' }, // Gold
+            { name: 'Low Miles', colorCode: '#32CD32' }, // LimeGreen
+            { name: 'No Accidents', colorCode: '#1E90FF' }, // DodgerBlue
+            { name: 'Fuel Efficient', colorCode: '#228B22' }, // ForestGreen
+            { name: 'Powerful Engine', colorCode: '#FF4500' }, // OrangeRed
+            { name: 'Free Powertrain Warranty', colorCode: '#800080' }, // Purple
+        ];
+
+        for (const def of defaults) {
+            const exists = await prisma.marketingLabel.findFirst({
+                where: { name: def.name, companyId: null }
+            });
+            if (!exists) {
+                await prisma.marketingLabel.create({
+                    data: {
+                        ...def,
+                        companyId: null
+                    }
+                });
+            }
+        }
+
+        // Refetch
+        labels = await prisma.marketingLabel.findMany({
+            where: whereClause,
+            orderBy: { name: 'asc' }
+        });
+    }
+
+
+    return labels;
+}
+
+export async function getVehicleHistory(
+    vin: string,
+    page: number = 1,
+    pageSize: number = 50,
+    filters: { startDate?: string, endDate?: string, author?: string, field?: string } = {}
+) {
+    const user = await getUserContext();
+
+    const where: any = {
+        vehicleId: vin,
+        companyId: user.companyId
+    };
+
+    if (filters.startDate) {
+        const start = new Date(filters.startDate);
+        start.setHours(0, 0, 0, 0);
+        where.timestamp = { ...where.timestamp, gte: start };
+    }
+
+    if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.timestamp = { ...where.timestamp, lte: end };
+    }
+
+    if (filters.author) {
+        where.userName = {
+            contains: filters.author
+        };
+    }
+
+    if (filters.field) {
+        where.field = {
+            contains: filters.field
+        };
+    }
+
+    const [logs, total] = await Promise.all([
+        prisma.vehicleHistory.findMany({
+            where,
+            orderBy: { timestamp: 'desc' },
+            skip: (page - 1) * pageSize,
+            take: pageSize
+        }),
+        prisma.vehicleHistory.count({ where })
+    ]);
+
+    return {
+        logs,
+        total,
+        pages: Math.ceil(total / pageSize)
+    };
+}
+
+export async function revertVehicleChange(logId: string) {
+    const user = await getUserContext();
+
+    // Fetch log
+    const log = await prisma.vehicleHistory.findUnique({
+        where: { id: logId }
+    });
+
+    if (!log || !log.oldValue) throw new Error("Log not found or no old value");
+
+    // Security check: Match company
+    if (log.companyId !== user.companyId) throw new Error("Unauthorized");
+
+    // Security: Check if user has access to vehicle
+    const vehicle = await prisma.vehicle.findFirst({
+        where: { vin: log.vehicleId, companyId: user.companyId }
+    });
+    if (!vehicle) throw new Error("Unauthorized");
+
+    // Revert logic...
+    let valToRestore: any = log.oldValue;
+    if (!isNaN(Number(valToRestore)) && valToRestore !== '') {
+        const num = Number(valToRestore);
+        valToRestore = num;
+    }
+
+    // New Log for the Revert
+    await prisma.vehicleHistory.create({
+        data: {
+            vehicleId: log.vehicleId,
+            userId: user.id,
+            userName: user.name,
+            companyId: user.companyId,
+            field: log.field,
+            oldValue: log.newValue,
+            newValue: log.oldValue + ' (Reverted)'
+        }
+    });
+
+    await prisma.vehicle.update({
+        where: { vin: log.vehicleId },
+        data: {
+            [log.field]: valToRestore
+        }
+    });
+
+    revalidatePath(`/inventory/${log.vehicleId}`);
 }

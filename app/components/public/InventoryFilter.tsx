@@ -15,6 +15,7 @@ interface FilterState {
     drivetrain: string;
     fuelType: string;
     bodyStyle: string;
+    marketingLabels: string[];
 }
 
 interface InventoryFilterProps {
@@ -59,7 +60,8 @@ export default function InventoryFilter({ vehicles, onFilterChange }: InventoryF
         maxMiles: '',
         drivetrain: '',
         fuelType: '',
-        bodyStyle: ''
+        bodyStyle: '',
+        marketingLabels: []
     });
 
     // Extract unique values for dropdowns
@@ -75,6 +77,21 @@ export default function InventoryFilter({ vehicles, onFilterChange }: InventoryF
     const uniqueDrivetrains = useMemo(() => Array.from(new Set(vehicles.map(v => v.driveTrain).filter(Boolean))).sort(), [vehicles]);
     const uniqueFuelTypes = useMemo(() => Array.from(new Set(vehicles.map(v => v.fuelType).filter(Boolean))).sort(), [vehicles]);
     const uniqueBodyStyles = useMemo(() => Array.from(new Set(vehicles.map(v => v.bodyStyle).filter(Boolean))).sort(), [vehicles]);
+
+    // Extract unique Marketing Labels
+    const uniqueLabels = useMemo(() => {
+        const labelsMap = new Map();
+        vehicles.forEach(v => {
+            if (v.marketingLabels) {
+                v.marketingLabels.forEach((l: any) => {
+                    if (!labelsMap.has(l.name)) {
+                        labelsMap.set(l.name, l);
+                    }
+                });
+            }
+        });
+        return Array.from(labelsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }, [vehicles]);
 
     // Apply filters
     useEffect(() => {
@@ -95,12 +112,19 @@ export default function InventoryFilter({ vehicles, onFilterChange }: InventoryF
             if (filters.fuelType && vehicle.fuelType !== filters.fuelType) return false;
             if (filters.bodyStyle && vehicle.bodyStyle !== filters.bodyStyle) return false;
 
+            // Marketing Labels Filter (AND logic: must match all selected)
+            if (filters.marketingLabels.length > 0) {
+                const vehicleLabels = vehicle.marketingLabels?.map((l: any) => l.name) || [];
+                const hasAllLabels = filters.marketingLabels.every(label => vehicleLabels.includes(label));
+                if (!hasAllLabels) return false;
+            }
+
             return true;
         });
         onFilterChange(filtered);
     }, [filters, vehicles, onFilterChange]);
 
-    const handleChange = (field: keyof FilterState, value: string) => {
+    const handleChange = (field: keyof FilterState, value: string | string[]) => {
         setFilters(prev => ({
             ...prev,
             [field]: value,
@@ -121,7 +145,8 @@ export default function InventoryFilter({ vehicles, onFilterChange }: InventoryF
             maxMiles: '',
             drivetrain: '',
             fuelType: '',
-            bodyStyle: ''
+            bodyStyle: '',
+            marketingLabels: []
         });
     };
 
@@ -282,6 +307,38 @@ export default function InventoryFilter({ vehicles, onFilterChange }: InventoryF
                             placeholder={limits.maxMiles.toString()}
                             className="w-1/2 bg-[#262626] border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-red-600"
                         />
+                    </div>
+                </div>
+
+                {/* Marketing Labels (Perks) */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-400 mb-2">Perks & Features</label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                        {uniqueLabels.map(label => (
+                            <label key={label.name} className="flex items-center gap-2 cursor-pointer group">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.marketingLabels.includes(label.name)}
+                                    onChange={(e) => {
+                                        const newLabels = e.target.checked
+                                            ? [...filters.marketingLabels, label.name]
+                                            : filters.marketingLabels.filter((l: any) => l !== label.name);
+                                        handleChange('marketingLabels', newLabels);
+                                    }}
+                                    className="rounded border-gray-700 bg-[#262626] text-red-600 focus:ring-red-600 focus:ring-offset-gray-900"
+                                />
+                                <span className="text-sm text-gray-300 group-hover:text-white transition-colors flex items-center gap-2">
+                                    {label.name}
+                                    <span
+                                        className="w-2 h-2 rounded-full inline-block"
+                                        style={{ backgroundColor: label.colorCode }}
+                                    />
+                                </span>
+                            </label>
+                        ))}
+                        {uniqueLabels.length === 0 && (
+                            <div className="text-sm text-gray-500 italic">No specific perks available.</div>
+                        )}
                     </div>
                 </div>
 

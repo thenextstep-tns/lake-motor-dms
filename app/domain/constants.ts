@@ -48,3 +48,31 @@ export const DEFAULT_ROLES = {
     [UserRoleType.ShopManager]: "Shop Manager",
     [UserRoleType.Technician]: "Technician",
 } as const;
+
+export const VEHICLE_COLORS = [
+    'Beige', 'Black', 'Blue', 'Bronze', 'Brown', 'Burgundy', 'Camel', 'Charcoal', 'Cream',
+    'Dark Blue', 'Dark Green', 'Gold', 'Gray', 'Green', 'Light Blue', 'Light Green',
+    'Maroon', 'Orange', 'Pearl', 'Pewter', 'Pink', 'Purple', 'Red', 'Silver', 'Tan',
+    'Teal', 'White', 'Yellow', 'Other'
+];
+
+export const VEHICLE_CATEGORIES = [
+    'Compact', 'Station Wagon', 'Convertible', 'Sports', 'Hatchback', 'Pickup',
+    'SUV', 'Minivan', 'Sprinter Van', 'Cargo Van', 'Luxury', 'Commercial', 'Other'
+];
+
+export const VEHICLE_FUEL_TYPES = [
+    'Gasoline', 'Diesel', 'Hybrid', 'Electric', 'Flex Fuel', 'Other'
+];
+
+export const VEHICLE_BODY_STYLES = [
+    'Sedan', 'Coupe', 'Hatchback', 'Convertible', 'SUV', 'Truck', 'Van', 'Wagon', 'Other'
+];
+
+export const VEHICLE_DRIVETRAINS = [
+    'FWD', 'RWD', 'AWD', '4WD', '4x4'
+];
+
+export const VEHICLE_TRANSMISSION_TYPES = [
+    'Automatic', 'Manual', 'CVT', 'DCT', 'Other'
+];

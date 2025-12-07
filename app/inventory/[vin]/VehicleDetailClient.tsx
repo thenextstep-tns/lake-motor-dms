@@ -24,6 +24,20 @@ export default function VehicleDetailClient({ vehicle }: { vehicle: any }) {
                                 {vehicle.status}
                             </span>
                         </div>
+                        {/* Marketing Labels */}
+                        {vehicle.marketingLabels && vehicle.marketingLabels.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-4">
+                                {vehicle.marketingLabels.map((label: any) => (
+                                    <span
+                                        key={label.id}
+                                        className="px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider text-black shadow-sm"
+                                        style={{ backgroundColor: label.colorCode }}
+                                    >
+                                        {label.name}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-3">
                         <button

@@ -100,103 +100,114 @@ export default function InventoryTable({ vehicles, userId, lots, currentLotId }:
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">VIN / Stock</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Color</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Miles</th>
+                            <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 max-w-xs">Sales Notes</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Price</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">Inspection</th>
                             <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredVehicles.map((vehicle, index) => (
-                            <tr key={vehicle.vin} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors`}>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                        {filteredVehicles.map((vehicle, index) => {
+                            const hasGuarantee = vehicle.hasGuarantee;
+                            const rowClass = hasGuarantee
+                                ? 'bg-green-50 hover:bg-green-100 border-l-4 border-green-500'
+                                : `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50 transition-colors border-l-4 border-transparent`;
+
+                            return (
+                                <tr key={vehicle.vin} className={rowClass}>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                                         ${vehicle.status === 'PURCHASED' ? 'bg-purple-100 text-purple-800' :
-                                            vehicle.status === 'READY' ? 'bg-green-100 text-green-800' :
-                                                vehicle.status === 'SOLD' ? 'bg-gray-100 text-gray-800' :
-                                                    vehicle.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-blue-100 text-blue-800'}`}>
-                                        {vehicle.status}
-                                    </span>
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                    <div className="h-10 w-16 bg-gray-200 rounded overflow-hidden relative">
-                                        {vehicle.images && vehicle.images.length > 0 ? (
-                                            <Image
-                                                src={vehicle.images[0].driveId ? `/api/images/${vehicle.images[0].driveId}?thumbnail=true` : vehicle.images[0].publicUrl}
-                                                alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-                                                className="object-cover"
-                                                fill
-                                                unoptimized
-                                            />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-gray-400 text-xs">No Img</div>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                    <Link href={`/inventory/${vehicle.vin}/edit`} className="block hover:underline">
-                                        <div className="text-sm font-medium text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</div>
-                                        <div className="text-xs text-gray-500">{vehicle.trim}</div>
-                                    </Link>
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap">
-                                    <div className="text-sm text-gray-900 font-mono">{vehicle.vin.substring(vehicle.vin.length - 8)}</div>
-                                    <div className="text-xs text-gray-500">{vehicle.stockNumber || '-'}</div>
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                                    {vehicle.color || '-'} / {vehicle.interiorColor || '-'}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
-                                    {vehicle.odometer?.toLocaleString()}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
-                                    ${vehicle.salePrice?.toLocaleString()}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
-                                    {vehicle.inspections && vehicle.inspections.length > 0 ? (
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-green-600 font-medium text-xs">
-                                                {new Date(vehicle.inspections[0].date).toLocaleDateString()}
-                                            </span>
-                                            {vehicle.inspections[0].codes && vehicle.inspections[0].codes.length > 0 && (
-                                                <span className="text-xs text-red-500 bg-red-50 px-1 rounded border border-red-100">
-                                                    {vehicle.inspections[0].codes.length} Codes
-                                                </span>
+                                                vehicle.status === 'READY' ? 'bg-green-100 text-green-800' :
+                                                    vehicle.status === 'SOLD' ? 'bg-gray-100 text-gray-800' :
+                                                        vehicle.status === 'ON_HOLD' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-blue-100 text-blue-800'}`}>
+                                            {vehicle.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                        <div className="h-10 w-16 bg-gray-200 rounded overflow-hidden relative">
+                                            {vehicle.images && vehicle.images.length > 0 ? (
+                                                <Image
+                                                    src={vehicle.images[0].driveId ? `/api/images/${vehicle.images[0].driveId}?thumbnail=true` : vehicle.images[0].publicUrl}
+                                                    alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                                                    className="object-cover"
+                                                    fill
+                                                    unoptimized
+                                                />
+                                            ) : (
+                                                <div className="flex items-center justify-center h-full text-gray-400 text-xs">No Img</div>
                                             )}
                                         </div>
-                                    ) : (
-                                        <span className="text-gray-400">-</span>
-                                    )}
-                                </td>
-                                <td className="px-3 py-2 whitespace-nowrap text-center text-sm font-medium">
-                                    <div className="flex items-center justify-center gap-2">
-                                        <button
-                                            onClick={() => handleDepositClick(vehicle)}
-                                            className="text-yellow-600 hover:text-yellow-900 p-1 hover:bg-yellow-100 rounded"
-                                            title="Add Deposit"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                        </button>
-                                        <Link
-                                            href={`/inventory/${vehicle.vin}/edit?tab=service`}
-                                            className="text-purple-600 hover:text-purple-900 p-1 hover:bg-purple-100 rounded"
-                                            title="Add Inspection"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                            </svg>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                        <Link href={`/inventory/${vehicle.vin}/edit`} className="block hover:underline">
+                                            <div className="text-sm font-medium text-gray-900">{vehicle.year} {vehicle.make} {vehicle.model}</div>
+                                            <div className="text-xs text-gray-500">{vehicle.trim}</div>
                                         </Link>
-                                        <Link href={`/inventory/${vehicle.vin}/edit`} className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-100 rounded">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                            </svg>
-                                        </Link>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                        <div className="text-sm text-gray-900 font-mono">{vehicle.vin.substring(vehicle.vin.length - 8)}</div>
+                                        <div className="text-xs text-gray-500">{vehicle.stockNumber || '-'}</div>
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                                        {vehicle.color || '-'} / {vehicle.interiorColor || '-'}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-900">
+                                        {vehicle.odometer?.toLocaleString()}
+                                    </td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={vehicle.salesNotes}>
+                                        {vehicle.salesNotes || '-'}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-green-600">
+                                        ${(vehicle.salePrice && vehicle.salePrice > 0 ? vehicle.salePrice : vehicle.regularPrice)?.toLocaleString()}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
+                                        {vehicle.inspections && vehicle.inspections.length > 0 ? (
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-green-600 font-medium text-xs">
+                                                    {new Date(vehicle.inspections[0].date).toLocaleDateString()}
+                                                </span>
+                                                {vehicle.inspections[0].codes && vehicle.inspections[0].codes.length > 0 && (
+                                                    <span className="text-xs text-red-500 bg-red-50 px-1 rounded border border-red-100">
+                                                        {vehicle.inspections[0].codes.length} Codes
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-400">-</span>
+                                        )}
+                                    </td>
+                                    <td className="px-3 py-2 whitespace-nowrap text-center text-sm font-medium">
+                                        <div className="flex items-center justify-center gap-2">
+                                            <button
+                                                onClick={() => handleDepositClick(vehicle)}
+                                                className="text-yellow-600 hover:text-yellow-900 p-1 hover:bg-yellow-100 rounded"
+                                                title="Add Deposit"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                            </button>
+                                            <Link
+                                                href={`/inventory/${vehicle.vin}/edit?tab=service`}
+                                                className="text-purple-600 hover:text-purple-900 p-1 hover:bg-purple-100 rounded"
+                                                title="Add Inspection"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                                </svg>
+                                            </Link>
+                                            <Link href={`/inventory/${vehicle.vin}/edit`} className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-100 rounded">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                            </Link>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
