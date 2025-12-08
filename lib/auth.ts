@@ -1,18 +1,15 @@
 import NextAuth from "next-auth";
-import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { UserRoleType, DEFAULT_ROLES } from "@/app/domain/constants";
+import authConfig from "./auth.config";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: PrismaAdapter(prisma),
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
-  ],
+  session: { strategy: "jwt" }, // Explicitly merge strategy
   callbacks: {
+    ...authConfig.callbacks, // Keep authorized callback
     async signIn({ user }) {
       if (!user.email) return false;
 
@@ -70,14 +67,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    async session({ session, user }) {
-      if (session.user) {
-        // Fetch fresh member data/context
-        // Note: 'user' arg in session callback might be stale or structure depends on strategy (jwt vs db). 
-        // With PrismaAdapter, session strategy is usually "database" by default, so 'user' is the DB user.
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        // Fetch fresh member data/context using token.sub (userId)
+        session.user.id = token.sub; // Ensure ID is set from token
 
         const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
+          where: { id: token.sub },
           include: {
             memberships: {
               include: {
@@ -111,7 +107,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           activeMembership.roles.forEach(r => {
             r.permissions.forEach(rp => {
               perms.add(`${rp.permission.action}:${rp.permission.resource}`);
-              // If Manage:all, maybe add specific flag?
               if (rp.permission.action === 'manage' && rp.permission.resource === 'all') {
                 perms.add('admin');
               }
@@ -120,6 +115,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           session.user.permissions = Array.from(perms);
         }
       }
+      // Ensure structure logic
       return session;
     },
   },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { toggleRolePermission } from '@/app/actions/settings'; // You'll need to export this
 import { useRouter } from 'next/navigation';
 
@@ -41,9 +41,9 @@ export default function RightsEditorClient({ roles, permissions }: Props) {
             <table className="w-full text-sm text-left">
                 <thead>
                     <tr className="bg-gray-50 border-b border-gray-100">
-                        <th className="p-4 font-semibold text-gray-600 sticky left-0 bg-gray-50 z-10">Resource / Action</th>
+                        <th className="p-4 font-semibold text-gray-600 sticky left-0 top-0 bg-gray-50 z-20 border-b border-gray-100">Resource / Action</th>
                         {roles.map(role => (
-                            <th key={role.id} className="p-4 font-semibold text-gray-800 text-center min-w-[100px]">
+                            <th key={role.id} className="p-4 font-semibold text-gray-800 text-center min-w-[100px] sticky top-0 bg-gray-50 z-10 border-b border-gray-100 shadow-sm">
                                 {role.name}
                                 {role.isSystem && <span className="block text-[10px] text-gray-400 font-normal">System</span>}
                             </th>
@@ -52,38 +52,37 @@ export default function RightsEditorClient({ roles, permissions }: Props) {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                     {Object.entries(permissionsByResource).map(([resource, perms]) => (
-                        <>
-                            <tr key={resource} className="bg-blue-50/50">
+                        <React.Fragment key={resource}>
+                            <tr className="bg-blue-50/50">
                                 <td colSpan={roles.length + 1} className="p-3 font-bold text-blue-800 uppercase tracking-wider text-xs sticky left-0 z-10">
                                     {resource}
                                 </td>
                             </tr>
-                            {perms.map(perm => (
-                                <tr key={perm.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="p-3 pl-6 text-gray-600 font-medium sticky left-0 bg-white z-10 border-r border-gray-100">
-                                        {perm.action}
+                            {(perms as any[]).map(permission => (
+                                <tr key={permission.id} className="hover:bg-gray-50 group">
+                                    <td className="p-3 text-sm font-medium text-gray-600 sticky left-0 bg-white group-hover:bg-gray-50 z-10 border-r border-gray-100">
+                                        {permission.action}
                                     </td>
                                     {roles.map(role => {
-                                        const hasPerm = role.permissions.some((rp: any) => rp.permissionId === perm.id);
-                                        const isSystemAdmin = role.name === 'System Admin'; // Hardcoded safety
-                                        const isLoading = loading === `${role.id}-${perm.id}`;
+                                        const isEnabled = role.permissions.some((rp: any) => rp.permissionId === permission.id);
+                                        const isSystemAdmin = role.name === 'System Admin';
+                                        const isLoading = loading === `${role.id}-${permission.id}`;
 
                                         return (
-                                            <td key={`${role.id}-${perm.id}`} className="p-3 text-center">
+                                            <td key={`${role.id}-${permission.id}`} className="p-3 text-center">
                                                 <input
                                                     type="checkbox"
                                                     disabled={isSystemAdmin || isLoading}
-                                                    checked={hasPerm}
-                                                    onChange={() => handleToggle(role.id, perm.id, hasPerm)}
-                                                    className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
+                                                    checked={isEnabled}
+                                                    onChange={(e) => handleToggle(role.id, permission.id, e.target.checked)}
+                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
                                                 />
-                                                {isLoading && <span className="ml-2 text-xs text-gray-400">...</span>}
                                             </td>
                                         );
                                     })}
                                 </tr>
                             ))}
-                        </>
+                        </React.Fragment>
                     ))}
                 </tbody>
             </table>

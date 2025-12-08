@@ -86,6 +86,16 @@ model User {
   email         String    @unique
   emailVerified DateTime?
   image         String?
+  
+  // Extended Profile
+  firstName     String?
+  lastName      String?
+  phone         String?
+  personalEmail String?
+  birthday      DateTime?
+  address       String?   // Current Residence
+  emergencyContact String? // JSON or simple text
+
   accounts      Account[]
   sessions      Session[]
   
@@ -117,6 +127,37 @@ model CompanyMember {
 
   // Roles assigned to this member in this company
   roles     Role[]
+
+  // Employment Details
+  status    String? @default("Active") // Active, Inactive, OnLeave
+  position  String?
+  department String?
+  
+  // Contact at Work
+  workPhone String?
+  workEmail String?
+
+  // Dates
+  startDate DateTime?
+  endDate   DateTime? // Exit day
+  
+  // Compensation (Restricted Access)
+  hourlyRate  Float?
+  weeklyRate  Float?
+  monthlyRate Float?
+  bonusSystem String?
+  
+  // Documentation
+  offerLink     String?
+  contractLink  String?
+  ndaLink       String?
+  
+  // Other
+  keyKpi        String?
+  currentExperience String?
+  comment       String?
+
+
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

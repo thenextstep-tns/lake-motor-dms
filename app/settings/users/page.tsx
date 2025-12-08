@@ -1,15 +1,27 @@
 import { getCompanyUsers, getRolesAndPermissions, getAccessibleLots } from '@/app/actions/settings';
+
 import UserListClient from './UserListClient';
+import InviteUserForm from '@/app/admin/users/InviteUserForm';
+import { prisma } from "@/lib/prisma";
 
 export default async function UsersPage() {
     try {
-        const [users, { roles }, lots] = await Promise.all([
+        const [users, { roles }, lots, companies] = await Promise.all([
             getCompanyUsers(),
             getRolesAndPermissions(),
-            getAccessibleLots()
+
+            getAccessibleLots(),
+            prisma.company.findMany({ select: { id: true, name: true } })
         ]);
 
-        return <UserListClient users={users} availableRoles={roles} availableLots={lots} />;
+        return (
+            <div>
+                <div className="flex justify-end mb-4">
+                    <InviteUserForm companies={companies} />
+                </div>
+                <UserListClient users={users} availableRoles={roles} availableLots={lots} />
+            </div>
+        );
     } catch (error) {
         return (
             <div className="p-8 text-center text-red-500">

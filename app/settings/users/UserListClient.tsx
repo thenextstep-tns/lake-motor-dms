@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { updateUserRoles } from '@/app/actions/settings';
+import MemberProfileModal from '../company/MemberProfileModal';
 import { useRouter } from 'next/navigation';
 
 type Props = {
@@ -13,15 +14,15 @@ type Props = {
 export default function UserListClient({ users, availableRoles, availableLots }: Props) {
     const router = useRouter();
     const [editingUser, setEditingUser] = useState<string | null>(null);
+    const [profileUser, setProfileUser] = useState<string | null>(null);
     const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
     const [selectedLots, setSelectedLots] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
 
     const startEdit = (user: any) => {
         setEditingUser(user.id);
-        const membership = user.memberships[0];
-        const currentRoles = membership?.roles.map((r: any) => r.id) || [];
-        const currentLots = membership?.accessibleLots.map((l: any) => l.id) || [];
+        const currentRoles = user.roles.map((r: any) => r.id) || [];
+        const currentLots = user.accessibleLots.map((l: any) => l.id) || [];
         setSelectedRoles(currentRoles);
         setSelectedLots(currentLots);
     };
@@ -75,8 +76,8 @@ export default function UserListClient({ users, availableRoles, availableLots }:
                     <tbody className="divide-y divide-gray-100">
                         {users.map(user => {
                             const isEditing = editingUser === user.id;
-                            const membership = user.memberships[0]; // Assuming single company context for now
-                            const displayRoles = membership?.roles.map((r: any) => r.name).join(', ') || 'No Role';
+                            // Flattened data usage
+                            const displayRoles = user.roles.map((r: any) => r.name).join(', ') || 'No Role';
 
                             return (
                                 <tr key={user.id} className="hover:bg-gray-50">
@@ -122,7 +123,7 @@ export default function UserListClient({ users, availableRoles, availableLots }:
                                             </div>
                                         ) : (
                                             <div className="flex flex-wrap gap-1">
-                                                {membership?.accessibleLots?.length > 0 ? membership.accessibleLots.map((l: any) => (
+                                                {user.accessibleLots?.length > 0 ? user.accessibleLots.map((l: any) => (
                                                     <span key={l.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
                                                         {l.name}
                                                     </span>
@@ -149,12 +150,20 @@ export default function UserListClient({ users, availableRoles, availableLots }:
                                                 </button>
                                             </div>
                                         ) : (
-                                            <button
-                                                onClick={() => startEdit(user)}
-                                                className="text-blue-600 hover:text-blue-800 text-xs font-medium"
-                                            >
-                                                Edit Roles
-                                            </button>
+                                            <div className="flex justify-end gap-2">
+                                                <button
+                                                    onClick={() => setProfileUser(user.id)}
+                                                    className="text-gray-600 hover:text-gray-900 text-xs font-medium"
+                                                >
+                                                    Manage Profile
+                                                </button>
+                                                <button
+                                                    onClick={() => startEdit(user)}
+                                                    className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                                                >
+                                                    Edit Roles
+                                                </button>
+                                            </div>
                                         )}
                                     </td>
                                 </tr>
@@ -163,6 +172,14 @@ export default function UserListClient({ users, availableRoles, availableLots }:
                     </tbody>
                 </table>
             </div>
+
+            {profileUser && (
+                <MemberProfileModal
+                    userId={profileUser}
+                    availableLots={availableLots}
+                    onClose={() => setProfileUser(null)}
+                />
+            )}
         </div>
     );
 }
