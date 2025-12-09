@@ -217,6 +217,41 @@ export async function updateVehicleStatus(vin: string, newStatus: string, _userI
     return serializeVehicle(updatedVehicle);
 }
 
+export async function deleteVehicle(vin: string) {
+    const user = await getUserContext();
+
+    const vehicle = await prisma.vehicle.findFirst({
+        where: { vin, companyId: user.companyId }
+    });
+    if (!vehicle) throw new Error('Vehicle not found or access denied');
+
+    const updatedVehicle = await prisma.vehicle.update({
+        where: { vin },
+        data: {
+            markedForDeletion: true,
+            deletedAt: new Date(),
+            deletedBy: user.id,
+            status: 'ARCHIVED'
+        }
+    });
+
+    // Log History
+    await prisma.vehicleHistory.create({
+        data: {
+            vehicleId: vin,
+            userId: user.id,
+            userName: user.name,
+            companyId: user.companyId,
+            field: 'status',
+            oldValue: vehicle.status,
+            newValue: 'ARCHIVED (Deleted)'
+        }
+    });
+
+    revalidatePath('/inventory');
+    return { success: true };
+}
+
 export async function updateVehicle(vin: string, data: any, _userId?: string, marketingLabelIds: string[] = []) {
     const user = await getUserContext();
 
@@ -355,6 +390,22 @@ export async function updateVehicle(vin: string, data: any, _userId?: string, ma
         });
     }
     // ---------------------------
+
+    // [New] Explicitly update image metadata (Order & Visibility) from the form state.
+    // This allows the "Update Vehicle" button to act as the master save for gallery arrangement.
+    if (images && Array.isArray(images)) {
+        const imageUpdates = images.map((img: any, index: number) => {
+            if (!img.id) return Promise.resolve();
+            return prisma.vehicleImage.update({
+                where: { id: img.id },
+                data: {
+                    order: index,
+                    isPublic: Boolean(img.isPublic)
+                }
+            }).catch(err => console.error(`Failed to update image ${img.id}`, err));
+        });
+        await Promise.all(imageUpdates);
+    }
 
     const vehicle = await prisma.vehicle.update({
         where: { vin },

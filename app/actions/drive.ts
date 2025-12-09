@@ -22,6 +22,13 @@ export async function syncVehicleImages(vin: string, folderUrl: string) {
         orderBy: { order: 'asc' }
     });
 
+    // CRITICAL FIX: Persist the Drive URL to the Vehicle record immediately
+    // This allows the user to see the link even if they haven't saved the full form yet.
+    await prisma.vehicle.update({
+        where: { vin },
+        data: { googleDriveUrl: folderUrl }
+    });
+
     // 1. Identify and Delete Orphans (Images in DB but not in new Drive Folder)
     const driveFileIds = new Set(files.map((f: any) => f.id));
     const orphans = existingImages.filter(img => img.driveId && !driveFileIds.has(img.driveId));
@@ -74,11 +81,18 @@ export async function syncVehicleImages(vin: string, folderUrl: string) {
     revalidatePath(`/inventory/${vin}/edit`);
     revalidatePath('/inventory');
 
+    // Fetch final list of images to return to client
+    const finalImages = await prisma.vehicleImage.findMany({
+        where: { vehicleVin: vin },
+        orderBy: { order: 'asc' }
+    });
+
     return {
         success: true,
         count,
         deleted: orphans.length,
-        message: `Synced: Added ${count} new, Removed ${orphans.length} old`
+        message: `Synced: Added ${count} new, Removed ${orphans.length} old`,
+        images: finalImages
     };
 }
 

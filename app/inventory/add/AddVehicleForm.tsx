@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createVehicle, updateVehicle, decodeVin } from '@/app/actions/vehicle';
+import { createVehicle, updateVehicle, deleteVehicle, decodeVin } from '@/app/actions/vehicle';
 import { syncVehicleImages, reorderImages, toggleImageVisibility } from '@/app/actions/drive';
 import { deleteDeposit } from '@/app/actions/deposit-delete';
 import { createInspection, updateInspection, deleteInspection, getDiagnosticCodeDescription } from '@/app/actions/inspection';
@@ -279,7 +279,7 @@ Key features:
 ${footer}`;
         }
 
-        setFormData((prev: any) => ({ ...prev, seoDescription: template }));
+        setFormData((prev: any) => ({ ...prev, vehicleCaption: template }));
     };
 
     const handleSyncImages = async () => {
@@ -313,10 +313,10 @@ ${footer}`;
             const result = await syncVehicleImages(formData.vin, formData.googleDriveUrl);
             if (result.success) {
                 alert(result.message);
-                // Refresh images
-                // We'd ideally re-fetch the vehicle data or just the images.
-                // For now, let's reload the page or ask parent to refresh.
-                window.location.reload();
+                // Update images state without reloading
+                if (result.images) {
+                    setImages(result.images);
+                }
             }
         } catch (error) {
             console.error(error);
@@ -394,14 +394,15 @@ ${footer}`;
         try {
             const labelIds = Array.from(selectedLabelIds);
             if (initialData) {
-                await updateVehicle(initialData.vin, formData, userId, labelIds);
+                // Include current images state to persist order/visibility
+                await updateVehicle(initialData.vin, { ...formData, images }, userId, labelIds);
                 if (onSuccess) {
                     onSuccess();
                 } else {
                     router.push('/inventory');
                 }
             } else {
-                await createVehicle(formData, userId, labelIds);
+                await createVehicle({ ...formData, images }, userId, labelIds);
                 router.push('/inventory');
             }
         } catch (error) {
@@ -689,7 +690,7 @@ ${footer}`;
                                         <Input label="Model" name="model" value={formData.model} onChange={handleChange} required />
 
                                         <div className="col-span-3">
-                                            <Input label="Vehicle Caption" name="vehicleCaption" value={formData.vehicleCaption} onChange={handleChange} />
+                                            <Input label="SEO Title / Short Caption" name="seoTitle" value={formData.seoTitle} onChange={handleChange} />
                                         </div>
 
                                         <Input label="Engine" name="engine" value={formData.engine} onChange={handleChange} />
@@ -966,10 +967,10 @@ ${footer}`;
                                         </div>
 
                                         <div className="flex flex-col">
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">SEO Description</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Description (Public)</label>
                                             <textarea
-                                                name="seoDescription"
-                                                value={formData.seoDescription}
+                                                name="vehicleCaption"
+                                                value={formData.vehicleCaption}
                                                 onChange={handleChange}
                                                 rows={12}
                                                 className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900 font-mono text-sm"
@@ -1770,21 +1771,46 @@ ${footer}`;
                     </div>
                 )}
 
-                <div className="mt-8 pt-6 border-t border-gray-200 flex justify-end">
-                    <button
-                        type="button"
-                        onClick={() => router.back()}
-                        className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none mr-4"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                    >
-                        {loading ? 'Saving...' : (initialData ? 'Update Vehicle' : 'Create Vehicle')}
-                    </button>
+                <div className="mt-8 pt-6 border-t border-gray-200 flex justify-between">
+                    <div>
+                        {initialData && (
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    if (confirm('Are you sure you want to archive this vehicle? It will be removed from the active inventory.')) {
+                                        setLoading(true);
+                                        try {
+                                            await deleteVehicle(initialData.vin);
+                                            router.push('/inventory');
+                                        } catch (error) {
+                                            console.error(error);
+                                            alert('Failed to delete vehicle');
+                                            setLoading(false);
+                                        }
+                                    }
+                                }}
+                                className="bg-red-50 py-2 px-4 border border-red-200 rounded-md shadow-sm text-sm font-medium text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                            >
+                                Delete Vehicle
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex gap-4">
+                        <button
+                            type="button"
+                            onClick={() => router.back()}
+                            className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                            {loading ? 'Saving...' : (initialData ? 'Update Vehicle' : 'Create Vehicle')}
+                        </button>
+                    </div>
                 </div>
 
             </form>
