@@ -53,19 +53,30 @@ export async function createInspection(data: any) {
         // Sync or Create Service Ticket
         try {
             if ((data.needsMechanicalRecon || data.needsCosmeticRecon)) {
-                // Determine description based on recon needs
-                const issues = [];
-                if (data.needsMechanicalRecon) issues.push("Mechanical Recon");
-                if (data.needsCosmeticRecon) issues.push("Cosmetic Recon");
-
-                // Create new ticket
-                await createServiceTicket({
-                    vehicleVin,
-                    description: `Inspection: ${issues.join(' & ')}`,
-                    inspectionId: inspection.id,
-                    repairDifficulty: 'Medium', // Default
-                    priority: 'Normal'
+                // Check vehicle status first
+                const vehicle = await prisma.vehicle.findUnique({
+                    where: { vin: vehicleVin },
+                    select: { status: true }
                 });
+
+                // ONLY auto-create if NOT Sold. 
+                // If Sold, the UI handles "Client Car" ticket creation explicitly.
+                if (vehicle?.status !== 'SOLD') {
+                    // Determine description based on recon needs
+                    const issues = [];
+                    if (data.needsMechanicalRecon) issues.push("Mechanical Recon");
+                    if (data.needsCosmeticRecon) issues.push("Cosmetic Recon");
+
+                    // Create new ticket
+                    await createServiceTicket({
+                        vehicleVin,
+                        description: `Inspection: ${issues.join(' & ')}`,
+                        inspectionId: inspection.id,
+                        repairDifficulty: 'Medium', // Default
+                        priority: 'Normal',
+                        type: 'RECON'
+                    });
+                }
             } else {
                 // Just link to existing active ticket if any
                 await syncInspectionToTicket(inspection.id, vehicleVin);

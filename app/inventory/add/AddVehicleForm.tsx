@@ -5,12 +5,12 @@ import { createVehicle, updateVehicle, deleteVehicle, decodeVin } from '@/app/ac
 import { syncVehicleImages, reorderImages, toggleImageVisibility } from '@/app/actions/drive';
 import { deleteDeposit } from '@/app/actions/deposit-delete';
 import { createInspection, updateInspection, deleteInspection, getDiagnosticCodeDescription } from '@/app/actions/inspection';
-import { getVehicleServiceHistory as getHistory } from '@/app/actions/service';
+import { getVehicleServiceHistory as getHistory, createServiceTicket } from '@/app/actions/service';
 import DepositModal from '@/app/components/inventory/DepositModal';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { VEHICLE_COLORS, VEHICLE_CATEGORIES, VEHICLE_FUEL_TYPES, VEHICLE_BODY_STYLES, VEHICLE_DRIVETRAINS, VEHICLE_TRANSMISSION_TYPES } from '@/app/domain/constants';
 
-export default function AddVehicleForm({ userId, initialData, onSuccess, availableLots = [], attributes = [], marketingLabels = [] }: { userId: string, initialData?: any, onSuccess?: () => void, availableLots?: { id: string, name: string }[], attributes?: any[], marketingLabels?: any[] }) {
+export default function AddVehicleForm({ userId, userName, initialData, onSuccess, availableLots = [], attributes = [], marketingLabels = [] }: { userId: string, userName?: string, initialData?: any, onSuccess?: () => void, availableLots?: { id: string, name: string }[], attributes?: any[], marketingLabels?: any[] }) {
     const router = useRouter();
     const searchParams = useSearchParams();
 
@@ -51,6 +51,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
         needsCosmeticRecon: false,
         mechanicalReconData: {} as Record<string, any>,
         cosmeticReconData: {} as Record<string, any>,
+        priority: 'Normal',
         codes: [] as { code: string, description: string }[]
     });
     const [newCode, setNewCode] = useState({ code: '', description: '' });
@@ -64,7 +65,7 @@ export default function AddVehicleForm({ userId, initialData, onSuccess, availab
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [historyPage, setHistoryPage] = useState(1);
     const [historyTotalPages, setHistoryTotalPages] = useState(1);
-    const [historyFilters, setHistoryFilters] = useState<{ date?: string, author?: string }>({});
+    const [historyFilters, setHistoryFilters] = useState<{ startDate?: string, endDate?: string, field?: string, author?: string }>({});
 
 
     const [formData, setFormData] = useState(initialData || {
@@ -486,9 +487,58 @@ ${footer}`;
 
             if (result.warning) {
                 alert(result.warning);
-            } else if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
-                // Service Ticket is automatically created/synced by the server action if needed
-                // We just need to ensure the vehicle status is updated if it wasn't already
+            }
+
+            // Post-Sale Client Repair Logic
+            if (formData.status === 'SOLD') {
+                const confirmClient = confirm(
+                    "This vehicle is SOLD. \n\n" +
+                    "Do you want to create a Client Service Ticket? \n" +
+                    "(Reminder: Major repairs should be done by 3rd party to save time.)"
+                );
+
+                if (confirmClient) {
+                    const issues = [];
+                    if (inspectionForm.needsMechanicalRecon) issues.push("Mechanical Recon");
+                    if (inspectionForm.needsCosmeticRecon) issues.push("Cosmetic Recon");
+                    let issueSummary = issues.length > 0 ? issues.join(' & ') : 'General Check';
+
+                    // Parse detailed failures to append to description
+                    const details: string[] = [];
+                    const collectFailures = (data: Record<string, any>) => {
+                        Object.entries(data).forEach(([item, val]) => {
+                            const status = typeof val === 'string' ? val : val.status;
+                            const notes = typeof val === 'string' ? '' : val.notes;
+                            if (status === 'Fail' || status === 'Attention') {
+                                details.push(`${item}: ${notes || status}`);
+                            }
+                        });
+                    };
+                    collectFailures(inspectionForm.mechanicalReconData);
+                    collectFailures(inspectionForm.cosmeticReconData);
+
+                    if (details.length > 0) {
+                        issueSummary += `: ${details.join(', ')}`;
+                    }
+
+                    await createServiceTicket({
+                        vehicleVin: formData.vin,
+                        description: `Client Post-Sale Repair: ${issueSummary}${inspectionForm.info ? ` - ${inspectionForm.info}` : ''}`,
+                        inspectionId: result.inspection.id,
+                        priority: 'Critical',
+                        tags: 'Client Car',
+                        type: 'CLIENT_REQ'
+                    });
+                    // Force status update to be sure, though ticket creation might handle logic? 
+                    // Actually status update logic is on COMPLETE, so here we might just set to IN_REPAIR if not already
+                    await updateVehicle(formData.vin, { ...formData, status: 'IN_REPAIR' }, userId);
+                    alert('Inspection saved & Client Service Ticket created!');
+                }
+            }
+            // Standard Pre-Sale Logic
+            else if (inspectionForm.needsMechanicalRecon || inspectionForm.needsCosmeticRecon) {
+                // Service Ticket is automatically created/synced by the server action if NOT SOLD
+                // We just need to ensure the vehicle status is updated
                 await updateVehicle(formData.vin, { ...formData, status: 'INSPECTED' }, userId);
                 alert('Inspection saved. Service Ticket created automatically.');
             } else {
@@ -536,6 +586,7 @@ ${footer}`;
             needsCosmeticRecon: inspection.needsCosmeticRecon || false,
             mechanicalReconData: inspection.mechanicalReconData ? JSON.parse(inspection.mechanicalReconData) : {},
             cosmeticReconData: inspection.cosmeticReconData ? JSON.parse(inspection.cosmeticReconData) : {},
+            priority: inspection.priority || 'Normal',
             codes: inspection.codes.map((c: any) => ({ code: c.code, description: c.description || '' }))
         });
         setIsInspectionFormOpen(true);
@@ -635,6 +686,7 @@ ${footer}`;
                                 needsCosmeticRecon: false,
                                 mechanicalReconData: {},
                                 cosmeticReconData: {},
+                                priority: 'Normal', // NEW
                                 codes: []
                             });
                             setIsInspectionFormOpen(true);
@@ -1083,13 +1135,14 @@ ${footer}`;
                                     onClick={() => {
                                         setEditingInspection(null);
                                         setInspectionForm({
-                                            name: '',
+                                            name: userName || '',
                                             date: new Date().toISOString().split('T')[0],
                                             info: '',
                                             needsMechanicalRecon: false,
                                             needsCosmeticRecon: false,
                                             mechanicalReconData: {},
                                             cosmeticReconData: {},
+                                            priority: 'Normal', // NEW
                                             codes: []
                                         });
                                         setIsInspectionFormOpen(true);
@@ -1105,9 +1158,21 @@ ${footer}`;
                         {isInspectionFormOpen ? (
                             <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
                                 <h4 className="text-md font-bold mb-4">{editingInspection ? 'Edit Inspection' : 'New Inspection'}</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                    <Input label="Inspection Name" name="name" value={inspectionForm.name} onChange={(e: any) => setInspectionForm({ ...inspectionForm, name: e.target.value })} required />
+                                <div className="grid grid-cols-2 gap-4 mb-4">
                                     <Input label="Date" name="date" type="date" value={inspectionForm.date} onChange={(e: any) => setInspectionForm({ ...inspectionForm, date: e.target.value })} required />
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                        <select
+                                            value={inspectionForm.priority || 'Normal'}
+                                            onChange={(e) => setInspectionForm({ ...inspectionForm, priority: e.target.value })}
+                                            className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2 border text-gray-900"
+                                        >
+                                            <option value="Low">Low</option>
+                                            <option value="Normal">Normal</option>
+                                            <option value="High">High</option>
+                                            <option value="Critical">Critical</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div className="mb-4">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Info</label>

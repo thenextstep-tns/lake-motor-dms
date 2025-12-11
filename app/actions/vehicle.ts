@@ -11,13 +11,14 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
     PURCHASED: ['DELIVERED'],
     DELIVERED: ['INSPECTED'],
     INSPECTED: ['IN_REPAIR', 'REPAIRED'], // Can skip repair if good
-    IN_REPAIR: ['REPAIRED'],
+    IN_REPAIR: ['REPAIRED', 'READY_FOR_PICKUP'], // Added READY_FOR_PICKUP for client repairs
     REPAIRED: ['DETAILED'],
     DETAILED: ['PICTURED'],
     PICTURED: ['POSTED'],
     POSTED: ['SOLD', 'ON_HOLD'],
     ON_HOLD: ['POSTED', 'SOLD'],
-    SOLD: [],
+    SOLD: ['IN_REPAIR'], // Allow going back to repair for client work
+    READY_FOR_PICKUP: ['SOLD', 'DELIVERED'], // Assuming it goes back to customer
 };
 
 // Helper to serialize Decimal types for client components

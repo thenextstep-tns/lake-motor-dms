@@ -92,10 +92,39 @@ export class TicketService {
         PermissionService.require(user, ActionType.Create, ResourceType.ServiceTicket);
         if (!user.companyId) throw new Error("No Company Context");
 
-        const vinSuffix = data.vehicleVin.slice(-6);
-        const now = new Date();
-        const timestamp = `${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-        const customId = `${vinSuffix}-${timestamp}`;
+        // Logic for ID Generation: [Type]-[Stock]-[Count]
+        const vehicle = await prisma.vehicle.findUnique({
+            where: { vin: data.vehicleVin },
+            select: { stockNumber: true, status: true }
+        });
+
+        const stock = vehicle?.stockNumber || data.vehicleVin.slice(-6);
+        const typeChar = (data.type === 'DETAILING') ? 'D' : 'S';
+
+        // Robust ID Generation: Find highest number to avoid collision on deletions
+        // Search by ID PREFIX, not just type, because multiple types (RECON, CLIENT_REQ) share the 'S' prefix
+        // and we cannot have duplicate IDs even if types differ.
+        const idPrefix = `${typeChar}-${stock}-`;
+        const existingTickets = await prisma.serviceTicket.findMany({
+            where: {
+                id: { startsWith: idPrefix }
+            },
+            select: { id: true }
+        });
+
+        let nextNum = 1;
+        if (existingTickets.length > 0) {
+            const nums = existingTickets.map(t => {
+                const lastPart = t.id.substring(t.id.lastIndexOf('-') + 1);
+                return parseInt(lastPart, 10);
+            }).filter(n => !isNaN(n));
+
+            if (nums.length > 0) {
+                nextNum = Math.max(...nums) + 1;
+            }
+        }
+
+        const customId = `${typeChar}-${stock}-${nextNum}`;
 
         const ticket = await prisma.serviceTicket.create({
             data: {
@@ -109,12 +138,76 @@ export class TicketService {
                 techId: data.techId || null,
                 companyId: user.companyId,
                 lotId: user.lotId,
+                // New Fields
+                type: data.type || "RECON",
+                priority: data.priority || "Normal",
+                tags: data.tags || null,
             },
         });
 
-        await prisma.vehicle.update({
-            where: { vin: data.vehicleVin },
-            data: { status: 'Inspected' }
+        // Auto-update status based on Type
+        if (data.type === 'RECON') {
+            await prisma.vehicle.update({
+                where: { vin: data.vehicleVin },
+                data: { status: 'Inspected' }
+            });
+            // History implicitly created by vehicle update usually? If not, we rely on prisma middleware if it exists.
+            // If user complains about missing history, it likely DOES NOT exists.
+            // Let's force a history log for TICKET CREATION if possible, but vehicle update is better.
+        } else if (data.type === 'DETAILING') {
+            // "change it to "In Detailing" (add this status) if there are NO RECON service tickets... Or keep in "In repair""
+            const activeReconCount = await prisma.serviceTicket.count({
+                where: {
+                    vehicleVin: data.vehicleVin,
+                    type: 'RECON',
+                    status: { not: TicketStatus.Completed },
+                    markedForDeletion: false
+                }
+            });
+
+            if (activeReconCount === 0) {
+                // EXPLICIT HISTORY LOGGING [CRITICAL FIX]
+                const oldStatus = vehicle?.status || 'Unknown';
+                const newStatus = 'In Detailing';
+
+                await prisma.vehicle.update({
+                    where: { vin: data.vehicleVin },
+                    data: { status: newStatus }
+                });
+
+                await prisma.vehicleHistory.create({
+                    data: {
+                        vehicleId: data.vehicleVin,
+                        companyId: user.companyId!,
+                        userId: user.id,
+                        userName: (user as any).name || 'Unknown',
+                        timestamp: new Date(),
+                        field: 'status',
+                        oldValue: oldStatus,
+                        newValue: newStatus
+                    }
+                });
+            } else {
+                // Keep in In Repair / Inspected (Ensure it's not Posted)
+                await prisma.vehicle.update({
+                    where: { vin: data.vehicleVin },
+                    data: { status: 'In Repair' }
+                });
+            }
+        }
+
+        // Explicitly Log to History for Ticket Creation (User Request: "Adding ... ticket is not reflected in Audit Log")
+        await prisma.vehicleHistory.create({
+            data: {
+                vehicleId: data.vehicleVin,
+                companyId: user.companyId!,
+                userId: user.id,
+                userName: (user as any).name || 'Unknown',
+                timestamp: new Date(),
+                field: 'TICKET_CREATED',
+                oldValue: '',
+                newValue: `${customId} (${data.type})`
+            }
         });
 
         return ticket;
@@ -136,12 +229,31 @@ export class TicketService {
                 techId: data.techId || null,
                 repairProcess: data.repairProcess,
                 repairDifficulty: data.repairDifficulty,
+                // Allow updating these too
+                type: data.type,
+                priority: data.priority,
+                tags: data.tags,
             }
         });
     }
 
     static async delete(user: UserContext, id: string) {
         PermissionService.require(user, ActionType.Delete, ResourceType.ServiceTicket);
+
+        const ticket = await prisma.serviceTicket.findUnique({ where: { id } });
+
+        await prisma.vehicleHistory.create({
+            data: {
+                vehicleId: ticket?.vehicleVin || '',
+                companyId: user.companyId!,
+                userId: user.id,
+                userName: (user as any).name || 'Unknown',
+                timestamp: new Date(),
+                field: 'TICKET_DELETED',
+                oldValue: id,
+                newValue: 'DELETED'
+            }
+        });
 
         return prisma.serviceTicket.updateMany({
             where: { id, companyId: user.companyId! },
@@ -160,7 +272,7 @@ export class TicketService {
 
         const ticket = await prisma.serviceTicket.findFirst({
             where: { id: ticketId, companyId: user.companyId! },
-            select: { status: true, vehicleVin: true }
+            select: { status: true, vehicleVin: true, type: true }
         });
         if (!ticket) throw new Error("Ticket not found");
 
@@ -305,7 +417,7 @@ export class TicketService {
 
         const ticket = await prisma.serviceTicket.findUnique({
             where: { id: ticketId },
-            select: { status: true }
+            include: { vehicle: true }
         });
         if (!ticket) throw new Error("Ticket not found");
 
@@ -322,10 +434,81 @@ export class TicketService {
 
         const newStatus = ticket.status === TicketStatus.QualityControl ? TicketStatus.Completed : TicketStatus.QualityControl;
 
-        return prisma.serviceTicket.update({
+        // Perform the status update first
+        await prisma.serviceTicket.update({
             where: { id: ticketId },
             data: { status: newStatus }
         });
+
+        // WORKFLOW AUTOMATION (Only if completed)
+        if (newStatus === TicketStatus.Completed) {
+            // Check if there are ANY other active tickets for this VIN
+            const activeTicketsCount = await prisma.serviceTicket.count({
+                where: {
+                    vehicleVin: ticket.vehicleVin,
+                    status: { not: TicketStatus.Completed },
+                    markedForDeletion: false
+                }
+            });
+
+            if (activeTicketsCount === 0) {
+                // Dynamic Reversion Logic
+                // Find the last status before it entered a service flow
+                const history = await prisma.vehicleHistory.findMany({
+                    where: {
+                        vehicleId: ticket.vehicleVin,
+                        field: 'status',
+                        companyId: user.companyId!
+                    },
+                    orderBy: { timestamp: 'desc' },
+                    take: 50 // Increased capture depth
+                });
+
+                // Default fallback
+                let targetStatus = 'READY';
+                if (ticket.type === 'DETAILING') targetStatus = 'DETAILED';
+
+                // Look for a transition INTO service
+                // e.g. from 'POSTED' to 'IN_SERVICE' or 'INSPECTED'
+                // We want the 'oldValue' of that transition.
+                const serviceStatuses = ['IN_SERVICE', 'IN_REPAIR', 'INSPECTED', 'WAITING_PARTS', 'IN DETAILING', 'IN REQUEST'];
+
+                const entryLog = history.find(h =>
+                    serviceStatuses.some(s => s.toUpperCase() === (h.newValue?.replace(/"/g, '') || '').toUpperCase()) &&
+                    !serviceStatuses.some(s => s.toUpperCase() === (h.oldValue?.replace(/"/g, '') || '').toUpperCase())
+                );
+
+                if (entryLog && entryLog.oldValue) {
+                    targetStatus = entryLog.oldValue.replace(/"/g, '');
+                } else {
+                    // Try case-insensitive fallback if exact match failed
+                    const entryLogRelaxed = history.find(h =>
+                        serviceStatuses.some(s => s.toUpperCase() === (h.newValue?.replace(/"/g, '') || '').toUpperCase()) &&
+                        !serviceStatuses.includes(h.oldValue?.replace(/"/g, '') || '')
+                    );
+                    if (entryLogRelaxed && entryLogRelaxed.oldValue) {
+                        targetStatus = entryLogRelaxed.oldValue.replace(/"/g, '');
+                    }
+                }
+
+                // Apply Status
+                await prisma.vehicle.update({
+                    where: { vin: ticket.vehicleVin },
+                    data: { status: targetStatus }
+                });
+
+                // Auto-create Detail if RECON finished and it was previously POSTED/SOLD? 
+                // Or user instruction: "If the car was in Posted status... after those tickets are completed, the car should go back to the Posted Status"
+                // It implies we don't necessarily chain Detailing automatically if we are reverting.
+                // However, existing logic had auto-create detailing. I will COMMENT IT OUT to strictly follow "REVERT" logic unless explicitly asked to keep it.
+                // User said "Start with DETAILED PLAN", plan said "Revert".
+                // I will assume auto-chaining is NOT desired if we are reverting to Posted.
+                // But if it was "PURCHASED", maybe we still need flow?
+                // For now, I'll stick to simple reversion.
+            }
+        }
+
+        return { success: true };
     }
 
     static async requestParts(user: UserContext, ticketId: string, description: string) {

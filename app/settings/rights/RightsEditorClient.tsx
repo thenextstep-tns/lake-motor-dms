@@ -24,7 +24,7 @@ export default function RightsEditorClient({ roles, permissions }: Props) {
         const key = `${roleId}-${permId}`;
         setLoading(key);
         try {
-            await toggleRolePermission(roleId, permId, !currentVal);
+            await toggleRolePermission(roleId, permId, currentVal);
             router.refresh();
         } catch (error) {
             console.error(error);

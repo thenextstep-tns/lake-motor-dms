@@ -1,12 +1,14 @@
+import { auth } from '@/lib/auth';
 import { getVehicleAttributes, getMarketingLabels } from '@/app/actions/vehicle';
 import { getAccessibleLots } from '@/app/actions/settings';
 import AddVehicleForm from './AddVehicleForm';
 import { Suspense } from 'react';
 
-// Mock User ID for now
-const MOCK_USER_ID = 'mock-admin-id';
-
 export default async function AddVehiclePage() {
+    const session = await auth();
+    const userId = session?.user?.id || '';
+    const userName = session?.user?.name || 'Unknown User';
+
     const [attributes, lots, marketingLabels] = await Promise.all([
         getVehicleAttributes(),
         getAccessibleLots(),
@@ -25,7 +27,8 @@ export default async function AddVehiclePage() {
 
                 <Suspense fallback={<div>Loading form...</div>}>
                     <AddVehicleForm
-                        userId={MOCK_USER_ID}
+                        userId={userId}
+                        userName={userName}
                         attributes={attributes}
                         availableLots={lots}
                         marketingLabels={marketingLabels}

@@ -2,7 +2,7 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
@@ -13,49 +13,49 @@ datasource db {
 // --- Multi-Tenancy Core ---
 
 model Company {
-  id        String   @id @default(cuid())
-  name      String
-  address   String?
+  id           String   @id @default(cuid())
+  name         String
+  address      String?
   workingHours String? // JSON: { "mon": { "start": "09:00", "end": "18:00", "closed": false }, ... }
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  lots           Lot[]
-  contacts       CompanyContact[]
-  members        CompanyMember[]
-  roles          Role[]
-  vehicles       Vehicle[]
-  serviceTickets ServiceTicket[]
-  inspections    Inspection[]
-  tasks          Task[]
-  deposits       Deposit[]
-  attributes     VehicleAttribute[]
+  lots            Lot[]
+  contacts        CompanyContact[]
+  members         CompanyMember[]
+  roles           Role[]
+  vehicles        Vehicle[]
+  serviceTickets  ServiceTicket[]
+  inspections     Inspection[]
+  tasks           Task[]
+  deposits        Deposit[]
+  attributes      VehicleAttribute[]
   marketingLabels MarketingLabel[]
-  vehicleHistory VehicleHistory[]
+  vehicleHistory  VehicleHistory[]
 }
 
 model CompanyContact {
-  id        String   @id @default(cuid())
-  type      String   // PHONE, EMAIL
-  value     String
-  label     String?
-  
+  id    String  @id @default(cuid())
+  type  String // PHONE, EMAIL
+  value String
+  label String?
+
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Lot {
-  id        String   @id @default(cuid())
-  name      String
-  address   String?
+  id           String  @id @default(cuid())
+  name         String
+  address      String?
   workingHours String? // JSON
   timezone     String? @default("America/Chicago")
 
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  contacts       LotContact[]
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  contacts LotContact[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -81,24 +81,24 @@ model LotContact {
 
 model User {
   id            String    @id @default(cuid())
-// ... existing User fields unchanged
+  // ... existing User fields unchanged
   name          String?
   email         String    @unique
   emailVerified DateTime?
   image         String?
-  
+
   // Extended Profile
-  firstName     String?
-  lastName      String?
-  phone         String?
-  personalEmail String?
-  birthday      DateTime?
-  address       String?   // Current Residence
+  firstName        String?
+  lastName         String?
+  phone            String?
+  personalEmail    String?
+  birthday         DateTime?
+  address          String? // Current Residence
   emergencyContact String? // JSON or simple text
 
-  accounts      Account[]
-  sessions      Session[]
-  
+  accounts Account[]
+  sessions Session[]
+
   // App-specific
   currentLotId String? // Last visited context
 
@@ -113,26 +113,26 @@ model User {
 }
 
 model CompanyMember {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   // Specific assignments
-  lotId     String? 
-  lot       Lot?     @relation(fields: [lotId], references: [id])
-  
+  lotId String?
+  lot   Lot?    @relation(fields: [lotId], references: [id])
+
   accessibleLots Lot[] @relation("MemberAccessibleLots")
 
   // Roles assigned to this member in this company
-  roles     Role[]
+  roles Role[]
 
   // Employment Details
-  status    String? @default("Active") // Active, Inactive, OnLeave
-  position  String?
+  status     String? @default("Active") // Active, Inactive, OnLeave
+  position   String?
   department String?
-  
+
   // Contact at Work
   workPhone String?
   workEmail String?
@@ -140,24 +140,22 @@ model CompanyMember {
   // Dates
   startDate DateTime?
   endDate   DateTime? // Exit day
-  
+
   // Compensation (Restricted Access)
   hourlyRate  Float?
   weeklyRate  Float?
   monthlyRate Float?
   bonusSystem String?
-  
+
   // Documentation
-  offerLink     String?
-  contractLink  String?
-  ndaLink       String?
-  
+  offerLink    String?
+  contractLink String?
+  ndaLink      String?
+
   // Other
-  keyKpi        String?
+  keyKpi            String?
   currentExperience String?
-  comment       String?
-
-
+  comment           String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,9 +168,9 @@ model Role {
   name        String
   description String?
   isSystem    Boolean @default(false) // If true, cannot be deleted (e.g. Owner)
-  
-  companyId   String? // Null for System Templates (if we used them), but for now every company has copies
-  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  companyId String? // Null for System Templates (if we used them), but for now every company has copies
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   permissions RolePermission[]
   members     CompanyMember[]
@@ -182,18 +180,18 @@ model Role {
 }
 
 model Permission {
-  id          String @id @default(cuid())
-  action      String // create, read, update, delete
-  resource    String // vehicle, ticket, user
-  
+  id       String @id @default(cuid())
+  action   String // create, read, update, delete
+  resource String // vehicle, ticket, user
+
   // Roles that have this permission
-  roles       RolePermission[]
+  roles RolePermission[]
 
   @@unique([action, resource])
 }
 
 model RolePermission {
-  id           String @id @default(cuid())
+  id           String     @id @default(cuid())
   roleId       String
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permissionId String
@@ -243,7 +241,7 @@ model VerificationToken {
 
 model Vehicle {
   // Core Details
-  vin           String   @id
+  vin           String  @id
   stockNumber   String?
   year          Int
   make          String
@@ -252,41 +250,41 @@ model Vehicle {
   bodyStyle     String?
   color         String?
   interiorColor String?
-  odometer      Int      @default(0)
-  condition     String?  @default("Used")
-  titleStatus   String?  @default("Clean")
+  odometer      Int     @default(0)
+  condition     String? @default("Used")
+  titleStatus   String? @default("Clean")
   keyId         String?
 
   // Performance & Specs
-  engine          String?
-  engineSize      String?
-  engineCylinders Int?
-  transmission    String?
-  transmissionType String?
+  engine             String?
+  engineSize         String?
+  engineCylinders    Int?
+  transmission       String?
+  transmissionType   String?
   transmissionSpeeds Int?
-  driveTrain      String?
-  fuelType        String?
-  doors           Int?
-  cityMpg         Int?
-  highwayMpg      Int?
-  interiorOemColor String?
-  exteriorOemColor String?
-  vehicleCaption  String?
-  category        String?
-  size            String?
+  driveTrain         String?
+  fuelType           String?
+  doors              Int?
+  cityMpg            Int?
+  highwayMpg         Int?
+  interiorOemColor   String?
+  exteriorOemColor   String?
+  vehicleCaption     String?
+  category           String?
+  size               String?
 
   // Equipment
-  vehicleEquipment String?
+  vehicleEquipment       String?
   windowStickerEquipment String?
 
   // Logistics
-  location    String? // Text description, distinct from Lot
-  salesPerson String?
-  salesNotes  String?
-  guarantee   String?
-  googleDriveUrl String?
+  location        String? // Text description, distinct from Lot
+  salesPerson     String?
+  salesNotes      String?
+  guarantee       String?
+  googleDriveUrl  String?
   walkaroundVideo String?
-  testDriveVideo String?
+  testDriveVideo  String?
 
   // Manufacture Details
   plantCity    String?
@@ -295,8 +293,8 @@ model Vehicle {
   grossWeight  String?
 
   // Financials
-  purchasePrice  Decimal @default(0)
-  salePrice      Decimal @default(0)
+  purchasePrice  Decimal  @default(0)
+  salePrice      Decimal  @default(0)
   regularPrice   Decimal?
   cashPrice      Decimal?
   wholesalePrice Decimal?
@@ -307,26 +305,26 @@ model Vehicle {
   blackBook      Decimal?
   edmundsBook    Decimal?
   nadaBook       Decimal?
-  
+
   // Start Pricing Refactor Fields
-  suggestedPrice Decimal?
-  carfaxPrice    Decimal?
+  suggestedPrice  Decimal?
+  carfaxPrice     Decimal?
   carsDotComPrice Decimal?
-  cargurusPrice  Decimal?
+  cargurusPrice   Decimal?
   // End Pricing Refactor Fields
 
-  downPayment    Decimal?
-  monthlyPayment Decimal?
-  biWeeklyPayment Decimal?
-  weeklyPayment   Decimal?
-  vehicleCost     Decimal?
-  repairCost      Decimal?
-  bottomLinePrice Decimal?
+  downPayment        Decimal?
+  monthlyPayment     Decimal?
+  biWeeklyPayment    Decimal?
+  weeklyPayment      Decimal?
+  vehicleCost        Decimal?
+  repairCost         Decimal?
+  bottomLinePrice    Decimal?
   preferredPriceText String?
-  salePriceExpires DateTime?
-  tax            Decimal @default(0)
-  total          Decimal @default(0)
-  balance        Decimal @default(0)
+  salePriceExpires   DateTime?
+  tax                Decimal   @default(0)
+  total              Decimal   @default(0)
+  balance            Decimal   @default(0)
 
   // Flags
   isFeatured         Boolean @default(false)
@@ -337,9 +335,9 @@ model Vehicle {
   isSold             Boolean @default(false)
   isNew              Boolean @default(false)
   isAsIs             Boolean @default(false)
-  
+
   // Marketing Overlay Labels
-  marketingLabels    MarketingLabel[]
+  marketingLabels MarketingLabel[]
 
   // SEO
   seoTitle       String?
@@ -350,10 +348,10 @@ model Vehicle {
 
   // Scoping & Safety
   companyId         String
-  company           Company @relation(fields: [companyId], references: [id])
+  company           Company   @relation(fields: [companyId], references: [id])
   lotId             String?
-  lot               Lot?    @relation(fields: [lotId], references: [id])
-  markedForDeletion Boolean @default(false)
+  lot               Lot?      @relation(fields: [lotId], references: [id])
+  markedForDeletion Boolean   @default(false)
   deletedAt         DateTime?
   deletedBy         String?
 
@@ -379,20 +377,20 @@ model Vehicle {
   transportationCost Decimal? // Transport / Delivery
 
   // History Relation
-  history        VehicleHistory[]
+  history VehicleHistory[]
 }
 
 model VehicleHistory {
   id        String   @id @default(cuid())
   vehicleId String
   vehicle   Vehicle  @relation(fields: [vehicleId], references: [vin], onDelete: Cascade)
-  userId    String?  // ID of user who made the change
-  userName  String?  // Name of user who made the change (snapshot)
+  userId    String? // ID of user who made the change
+  userName  String? // Name of user who made the change (snapshot)
   timestamp DateTime @default(now())
-  
-  field     String   // Field name that changed
-  oldValue  String?  // Stringified old value
-  newValue  String?  // Stringified new value
+
+  field    String // Field name that changed
+  oldValue String? // Stringified old value
+  newValue String? // Stringified new value
 
   companyId String
   company   Company @relation(fields: [companyId], references: [id])
@@ -409,17 +407,17 @@ model VehicleImage {
   order     Int     @default(0)
   mimeType  String?
   name      String?
-  
+
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin], onDelete: Cascade)
 }
 
 model PriceHistory {
-  id        String   @id @default(cuid())
-  oldPrice  Decimal
-  newPrice  Decimal
-  date      DateTime @default(now())
-  
+  id       String   @id @default(cuid())
+  oldPrice Decimal
+  newPrice Decimal
+  date     DateTime @default(now())
+
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin], onDelete: Cascade)
 }
@@ -427,28 +425,32 @@ model PriceHistory {
 // --- Service Module ---
 
 model ServiceTicket {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   description String
-  status      String   @default("Queue") 
-  
+  status      String @default("Queue")
+
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
-  
+
   techId String? // Legacy direct link, prefer using Assignee pattern if possible, but keeping for now
   tech   User?   @relation(fields: [techId], references: [id])
 
   repairProcess    String?
   repairDifficulty String?
 
+  type     String  @default("RECON") // RECON, DETAILING, CLIENT_REQ
+  priority String  @default("Normal") // Low, Normal, High, Critical
+  tags     String? // Comma-separated tags
+
   inspectionId String?
   inspection   Inspection? @relation(fields: [inspectionId], references: [id])
 
   // Scoping & Safety
   companyId         String
-  company           Company @relation(fields: [companyId], references: [id])
+  company           Company   @relation(fields: [companyId], references: [id])
   lotId             String?
-  lot               Lot?    @relation(fields: [lotId], references: [id])
-  markedForDeletion Boolean @default(false)
+  lot               Lot?      @relation(fields: [lotId], references: [id])
+  markedForDeletion Boolean   @default(false)
   deletedAt         DateTime?
   deletedBy         String?
 
@@ -467,7 +469,7 @@ model Part {
   trackingNumber String?
   cost           Decimal @default(0)
   status         String  @default("ORDERED")
-  
+
   ticketId String
   ticket   ServiceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
@@ -478,14 +480,14 @@ model TimeLog {
   endTime   DateTime?
   type      String    @default("PRODUCTIVE")
   notes     String?
-  
+
   status      String?
   tasks       String?
   workDetails String?
-  
+
   ticketId String?
   ticket   ServiceTicket? @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  
+
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
@@ -493,65 +495,65 @@ model TimeLog {
 }
 
 model Deposit {
-  id           String   @id @default(cuid())
-  amount       Decimal
-  method       String
-  buyerName    String
-  date         DateTime @default(now())
-  expiryDate   DateTime
-  notes        String?
-  
+  id         String   @id @default(cuid())
+  amount     Decimal
+  method     String
+  buyerName  String
+  date       DateTime @default(now())
+  expiryDate DateTime
+  notes      String?
+
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
-  
+
   // Scoping
-  companyId         String
-  company           Company @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
 }
 
 model Task {
-  id          String   @id @default(cuid())
+  id          String @id @default(cuid())
   description String
-  status      String   @default("PENDING")
-  
+  status      String @default("PENDING")
+
   vehicleVin String?
   vehicle    Vehicle? @relation(fields: [vehicleVin], references: [vin])
-  
+
   assignedToId String?
   assignedTo   User?   @relation(fields: [assignedToId], references: [id])
 
   // Scoping
-  companyId         String
-  company           Company @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 }
 
 model Inspection {
-  id          String   @id @default(cuid())
-  name        String
-  date        DateTime @default(now())
-  info        String?
-  
+  id   String   @id @default(cuid())
+  name String
+  date DateTime @default(now())
+  info String?
+
   vehicleVin String
   vehicle    Vehicle @relation(fields: [vehicleVin], references: [vin])
-  
-  codes      InspectionCode[]
-  
+
+  codes InspectionCode[]
+
   needsMechanicalRecon Boolean @default(false)
   needsCosmeticRecon   Boolean @default(false)
-  
+
   mechanicalReconData String?
   cosmeticReconData   String?
 
   serviceTickets ServiceTicket[]
-  
+
   // Scoping
   companyId         String
-  company           Company @relation(fields: [companyId], references: [id])
+  company           Company   @relation(fields: [companyId], references: [id])
   lotId             String?
-  lot               Lot?    @relation(fields: [lotId], references: [id])
-  markedForDeletion Boolean @default(false)
+  lot               Lot?      @relation(fields: [lotId], references: [id])
+  markedForDeletion Boolean   @default(false)
   deletedAt         DateTime?
   deletedBy         String?
 
@@ -560,24 +562,24 @@ model Inspection {
 }
 
 model InspectionCode {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   code        String
   description String?
-  
+
   inspectionId String
   inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
 }
 
 model VehicleAttribute {
-  id        String   @id @default(cuid())
-  type      String   // COLOR, BODY_STYLE, FUEL_TYPE, CATEGORY, DRIVETRAIN, TRANS_TYPE
-  value     String
-  label     String?
-  
-  order     Int      @default(0)
-  
+  id    String  @id @default(cuid())
+  type  String // COLOR, BODY_STYLE, FUEL_TYPE, CATEGORY, DRIVETRAIN, TRANS_TYPE
+  value String
+  label String?
+
+  order Int @default(0)
+
   // Scoping: Null companyId means it's a System Default available to everyone
-  companyId String? 
+  companyId String?
   company   Company? @relation(fields: [companyId], references: [id])
 
   createdAt DateTime @default(now())
@@ -587,19 +589,19 @@ model VehicleAttribute {
 }
 
 model MarketingLabel {
-  id          String   @id @default(cuid())
-  name        String
-  colorCode   String   @default("#000000") // Hex
-  
+  id        String @id @default(cuid())
+  name      String
+  colorCode String @default("#000000") // Hex
+
   // Scoping: Null companyId means it's a System Default available to everyone
-  companyId   String? 
-  company     Company? @relation(fields: [companyId], references: [id])
-  
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
   // Implicit many-to-many with Vehicle
-  vehicles    Vehicle[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  vehicles Vehicle[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([name, companyId])
 }

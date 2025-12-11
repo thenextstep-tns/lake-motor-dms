@@ -5,6 +5,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import DepositModal from '@/app/components/inventory/DepositModal';
+import DetailingRequestModal from '@/app/components/inventory/DetailingRequestModal';
+import { createServiceTicket } from '@/app/actions/service';
 
 type Props = {
     vehicles: any[];
@@ -18,6 +20,7 @@ export default function InventoryTable({ vehicles, userId, lots, currentLotId }:
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedVehicle, setSelectedVehicle] = useState<any>(null);
+    const [selectedVehicleForDetailing, setSelectedVehicleForDetailing] = useState<any>(null);
     const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
     const handleLotChange = (newLotId: string) => {
@@ -198,6 +201,15 @@ export default function InventoryTable({ vehicles, userId, lots, currentLotId }:
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                                                 </svg>
                                             </Link>
+                                            <button
+                                                onClick={() => setSelectedVehicleForDetailing(vehicle)}
+                                                className="text-teal-600 hover:text-teal-900 p-1 hover:bg-teal-100 rounded"
+                                                title="Add Detailing Request"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                                </svg>
+                                            </button>
                                             <Link href={`/inventory/${vehicle.vin}/edit`} className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-100 rounded">
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -233,6 +245,15 @@ export default function InventoryTable({ vehicles, userId, lots, currentLotId }:
                     vehicle={selectedVehicle}
                     isOpen={isDepositModalOpen}
                     onClose={() => setIsDepositModalOpen(false)}
+                />
+            )}
+
+            {selectedVehicleForDetailing && (
+                <DetailingRequestModal
+                    isOpen={!!selectedVehicleForDetailing}
+                    onClose={() => setSelectedVehicleForDetailing(null)}
+                    vin={selectedVehicleForDetailing.vin}
+                    stockNumber={selectedVehicleForDetailing.stockNumber}
                 />
             )}
         </div>

@@ -22,6 +22,7 @@ export enum UserRoleType {
     Technician = "Technician",
     HR = "HR",
     Accountant = "Accountant",
+    Detailer = "Detailer",
 }
 
 export enum ResourceType {
@@ -51,6 +52,7 @@ export const DEFAULT_ROLES = {
     [UserRoleType.Technician]: "Technician",
     [UserRoleType.HR]: "HR",
     [UserRoleType.Accountant]: "Accountant",
+    [UserRoleType.Detailer]: "Detailer",
 } as const;
 
 export const VEHICLE_COLORS = [

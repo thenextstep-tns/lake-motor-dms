@@ -1,3 +1,4 @@
+import { auth } from '@/lib/auth';
 import { getVehicleByVin, getVehicleAttributes, getMarketingLabels } from '@/app/actions/vehicle';
 import { getAccessibleLots } from '@/app/actions/settings';
 import AddVehicleForm from '@/app/inventory/add/AddVehicleForm';
@@ -8,6 +9,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function EditVehiclePage({ params }: { params: Promise<{ vin: string }> }) {
     const { vin } = await params;
+    const session = await auth();
+    const userId = session?.user?.id || '';
+    const userName = session?.user?.name || 'Unknown User';
+
     const [vehicle, lots, attributes, marketingLabels] = await Promise.all([
         getVehicleByVin(vin),
         getAccessibleLots(),
@@ -18,9 +23,6 @@ export default async function EditVehiclePage({ params }: { params: Promise<{ vi
     if (!vehicle) {
         notFound();
     }
-
-    // Mock User ID
-    const MOCK_USER_ID = 'mock-admin-id';
 
     return (
         <div className="min-h-screen bg-gray-100 py-8">
@@ -34,7 +36,8 @@ export default async function EditVehiclePage({ params }: { params: Promise<{ vi
 
                 <Suspense fallback={<div>Loading form...</div>}>
                     <AddVehicleForm
-                        userId={MOCK_USER_ID}
+                        userId={userId}
+                        userName={userName}
                         initialData={vehicle}
                         availableLots={lots}
                         attributes={attributes}

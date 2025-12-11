@@ -9,6 +9,8 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
     const [selectedTicket, setSelectedTicket] = useState<any>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [statusFilter, setStatusFilter] = useState('ALL');
+    const [priorityFilter, setPriorityFilter] = useState('ALL'); // NEW
+    const [typeFilter, setTypeFilter] = useState('ALL'); // NEW
     const [searchQuery, setSearchQuery] = useState('');
 
     // Dynamic Statuses
@@ -16,6 +18,10 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
 
     const filteredTickets = tickets.filter(ticket => {
         const matchesStatus = statusFilter === 'ALL' || ticket.status === statusFilter;
+        // NEW Filters
+        const matchesPriority = priorityFilter === 'ALL' || (ticket.priority || 'Normal') === priorityFilter;
+        const matchesType = typeFilter === 'ALL' || (ticket.type || 'RECON') === typeFilter;
+
         const searchLower = searchQuery.toLowerCase();
         const matchesSearch =
             ticket.vehicleVin.toLowerCase().includes(searchLower) ||
@@ -24,7 +30,40 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
             ticket.vehicle.model.toLowerCase().includes(searchLower) ||
             ticket.vehicle.year.toString().includes(searchLower);
 
-        return matchesStatus && matchesSearch;
+        return matchesStatus && matchesSearch && matchesPriority && matchesType;
+    }).sort((a, b) => {
+        // Status Grouping: 
+        // 1. Critical (Active)
+        // 2. High (Active)
+        // 3. Normal (Active) 
+        // 4. Low (Active)
+        // 5. Waiting Parts
+        // 6. Completed
+
+        const getScore = (ticket: any) => {
+            const status = ticket.status;
+            const priority = ticket.priority || 'Normal';
+
+            if (status === 'Completed') return 0;
+            if (status === 'Waiting Parts') return 10;
+
+            // Active Tickets
+            if (priority === 'Low') return 20;
+            if (priority === 'Normal') return 30;
+            if (priority === 'High') return 40;
+            if (priority === 'Critical') return 50;
+            return 25; // Default for active unknown
+        };
+
+        const scoreA = getScore(a);
+        const scoreB = getScore(b);
+
+        if (scoreA !== scoreB) {
+            return scoreB - scoreA; // Descending Score (Critical first)
+        }
+
+        // Within same group: Date Created Ascending (Oldest First)
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
 
     const handleTicketClick = (ticket: any) => {
@@ -37,7 +76,7 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
             {/* Header Controls */}
             <div className="bg-white border-b border-gray-200 px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 {/* Search Bar */}
-                <div className="relative max-w-md w-full">
+                <div className="relative max-w-xs w-full">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                             <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
@@ -46,10 +85,36 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
                     <input
                         type="text"
                         className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md p-2 border"
-                        placeholder="Search VIN, Stock #, Make, Model..."
+                        placeholder="Search..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
+                </div>
+
+                {/* Filters */}
+                <div className="flex gap-2">
+                    <select
+                        value={typeFilter}
+                        onChange={(e) => setTypeFilter(e.target.value)}
+                        className="block w-32 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                    >
+                        <option value="ALL">All Types</option>
+                        <option value="RECON">Service</option>
+                        <option value="DETAILING">Detailing</option>
+                        <option value="CLIENT_REQ">Client Req</option>
+                    </select>
+
+                    <select
+                        value={priorityFilter}
+                        onChange={(e) => setPriorityFilter(e.target.value)}
+                        className="block w-32 pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                    >
+                        <option value="ALL">All Priorities</option>
+                        <option value="Low">1 - Low</option>
+                        <option value="Normal">2 - Normal</option>
+                        <option value="High">3 - High</option>
+                        <option value="Critical">4 - Critical</option>
+                    </select>
                 </div>
             </div>
 
@@ -82,6 +147,8 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Ticket ID</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Vehicle</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Description</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Type</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Priority</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Difficulty</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50">Date</th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-center">Actions</th>
@@ -109,6 +176,18 @@ export default function ServiceDashboardClient({ initialTickets }: { initialTick
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className="text-sm text-gray-900 line-clamp-2 max-w-xs">{ticket.description}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {ticket.type || 'RECON'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                                    <span className={
+                                        ticket.priority === 'Critical' ? 'text-red-600' :
+                                            ticket.priority === 'High' ? 'text-orange-600' :
+                                                'text-gray-500'
+                                    }>
+                                        {ticket.priority || 'Normal'}
+                                    </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     {ticket.repairDifficulty && (

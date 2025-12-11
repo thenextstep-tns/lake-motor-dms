@@ -15,6 +15,7 @@ export default function TopNav() {
         { name: 'Dashboard', href: '/' },
         { name: 'Inventory', href: '/inventory' },
         { name: 'Service', href: '/service' },
+        { name: 'Detailing', href: '/detailing' },
         { name: 'Sales', href: '/sales' },
         { name: 'Settings', href: '/settings' },
     ];
