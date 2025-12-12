@@ -1,6 +1,6 @@
 import { getCurrentUser } from '@/lib/session';
 import { getCompanySettings } from '@/app/actions/company';
-import { getCompanyUsers } from '@/app/actions/settings';
+import { getCompanyUsers, getAccessibleLots } from '@/app/actions/settings';
 import { prisma } from '@/lib/prisma';
 import CompanySettingsClient from './CompanySettingsClient';
 import CompanyPhoneBook from './CompanyPhoneBook';
@@ -33,9 +33,10 @@ async function ClientWrapper() {
     }
 
     // Parallel fetch for speed
-    const [company, members] = await Promise.all([
+    const [company, members, lots] = await Promise.all([
         getCompanySettings(member.companyId),
-        getCompanyUsers()
+        getCompanyUsers(),
+        getAccessibleLots()
     ]);
 
     if (!company) return <div>Company not found.</div>;
@@ -51,8 +52,7 @@ async function ClientWrapper() {
                     <h3 className="text-xl font-bold text-gray-800">Employee Directory</h3>
                     <p className="text-sm text-gray-500">View and manage company staff.</p>
                 </div>
-                {/* @ts-ignore */}
-                <CompanyPhoneBook members={members} />
+                <CompanyPhoneBook members={members} availableLots={lots} />
             </section>
         </div>
     );

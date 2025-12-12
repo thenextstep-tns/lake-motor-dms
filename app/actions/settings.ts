@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import { PermissionService } from '@/app/services/PermissionService';
 import { ActionType, ResourceType } from '@/app/domain/constants';
 import { revalidatePath } from 'next/cache';
+import { SystemLogger } from '@/lib/logger';
+
 
 async function getAdminContext() {
     const session = await auth();
@@ -79,6 +81,8 @@ export async function getRolesAndPermissions() {
 
 export async function toggleRolePermission(roleId: string, permissionId: string, enable: boolean) {
     const user = await getAdminContext();
+    const session = await auth();
+
 
     // Verify scope of role
     const role = await prisma.role.findFirst({
@@ -90,13 +94,19 @@ export async function toggleRolePermission(roleId: string, permissionId: string,
         await prisma.rolePermission.create({
             data: { roleId, permissionId }
         }).catch(() => { });
+        console.log('[RightsEditor] Granting Permission:', roleId, permissionId);
+        await SystemLogger.log('PERMISSION_GRANTED', { roleId, permissionId }, { id: session?.user?.id, name: session?.user?.name, companyId: user.companyId });
+
     } else {
         await prisma.rolePermission.deleteMany({
             where: { roleId, permissionId }
         });
+        console.log('[RightsEditor] Revoking Permission:', roleId, permissionId);
+        await SystemLogger.log('PERMISSION_REVOKED', { roleId, permissionId }, { id: session?.user?.id, name: session?.user?.name, companyId: user.companyId });
     }
 
     revalidatePath('/settings');
+
 }
 
 export async function getCompanyUsers() {
@@ -391,6 +401,15 @@ export async function inviteUser(email: string, companyId: string, roleName: str
             // If already member, maybe add role? For now, do nothing or ensure role exists.
             roles: { connect: { id: role.id } }
         }
+    });
+
+    // Enqueue Invite Email
+    const { Queue } = await import('@/lib/queue');
+    await Queue.enqueue('SEND_INVITE', {
+        email,
+        companyId,
+        roleName,
+        invitedBy: session.user.name || session.user.email
     });
 
     revalidatePath('/admin/users');

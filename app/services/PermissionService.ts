@@ -6,6 +6,8 @@ export interface UserContext {
     lotId?: string | null;
     permissions?: string[];
     roles?: string[];
+    name?: string;
+    email?: string;
 }
 
 export class PermissionService {

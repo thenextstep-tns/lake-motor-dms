@@ -71,7 +71,7 @@ export default async function DetailingPage() {
     return (
         <div className="p-6">
             <h1 className="text-3xl font-bold mb-6 text-gray-800">Detailing Dashboard</h1>
-            <DetailingList initialTickets={serializedTickets} userId={session.user.id} />
+            <DetailingList initialTickets={serializedTickets} userId={session.user.id} userRoles={session.user.roles} />
         </div>
     );
 }

@@ -147,13 +147,20 @@ export class TicketService {
 
         // Auto-update status based on Type
         if (data.type === 'RECON') {
-            await prisma.vehicle.update({
+            const currentVehicle = await prisma.vehicle.findUnique({
                 where: { vin: data.vehicleVin },
-                data: { status: 'Inspected' }
+                select: { status: true }
             });
-            // History implicitly created by vehicle update usually? If not, we rely on prisma middleware if it exists.
-            // If user complains about missing history, it likely DOES NOT exists.
-            // Let's force a history log for TICKET CREATION if possible, but vehicle update is better.
+
+            // Rule: "We add an inspection report, and the vehicle has not been posted or sold -> Inspected."
+            const isPostedOrSold = ['POSTED', 'SOLD'].includes(currentVehicle?.status?.toUpperCase() || '');
+
+            if (!isPostedOrSold) {
+                await prisma.vehicle.update({
+                    where: { vin: data.vehicleVin },
+                    data: { status: 'Inspected' }
+                });
+            }
         } else if (data.type === 'DETAILING') {
             // "change it to "In Detailing" (add this status) if there are NO RECON service tickets... Or keep in "In repair""
             const activeReconCount = await prisma.serviceTicket.count({
@@ -180,7 +187,7 @@ export class TicketService {
                         vehicleId: data.vehicleVin,
                         companyId: user.companyId!,
                         userId: user.id,
-                        userName: (user as any).name || 'Unknown',
+                        userName: user.name || 'Unknown',
                         timestamp: new Date(),
                         field: 'status',
                         oldValue: oldStatus,
@@ -202,7 +209,7 @@ export class TicketService {
                 vehicleId: data.vehicleVin,
                 companyId: user.companyId!,
                 userId: user.id,
-                userName: (user as any).name || 'Unknown',
+                userName: user.name || 'Unknown',
                 timestamp: new Date(),
                 field: 'TICKET_CREATED',
                 oldValue: '',
@@ -247,7 +254,7 @@ export class TicketService {
                 vehicleId: ticket?.vehicleVin || '',
                 companyId: user.companyId!,
                 userId: user.id,
-                userName: (user as any).name || 'Unknown',
+                userName: user.name || 'Unknown',
                 timestamp: new Date(),
                 field: 'TICKET_DELETED',
                 oldValue: id,
@@ -272,9 +279,18 @@ export class TicketService {
 
         const ticket = await prisma.serviceTicket.findFirst({
             where: { id: ticketId, companyId: user.companyId! },
-            select: { status: true, vehicleVin: true, type: true }
+            select: { status: true, vehicleVin: true, type: true, techId: true }
         });
         if (!ticket) throw new Error("Ticket not found");
+
+        const shouldAssign = !ticket.techId;
+
+        // Rule: "Anyone gets assigned a service ticket -> In repair" (or In Detailing for detailing tickets)
+        // User workflow Step 3 & 5
+        const targetAttributes: any = { status: 'In Repair' };
+        if (ticket.type === 'DETAILING') {
+            targetAttributes.status = 'In Detailing';
+        }
 
         await prisma.$transaction([
             prisma.timeLog.create({
@@ -290,11 +306,14 @@ export class TicketService {
             }),
             prisma.serviceTicket.update({
                 where: { id: ticketId },
-                data: { status: TicketStatus.InProgress }
+                data: {
+                    status: TicketStatus.InProgress,
+                    techId: shouldAssign ? user.id : undefined
+                }
             }),
             prisma.vehicle.update({
                 where: { vin: ticket.vehicleVin },
-                data: { status: 'In Repair' }
+                data: targetAttributes
             })
         ]);
     }
@@ -432,7 +451,37 @@ export class TicketService {
             });
         }
 
-        const newStatus = ticket.status === TicketStatus.QualityControl ? TicketStatus.Completed : TicketStatus.QualityControl;
+        // --- Status Logic ---
+        // User Rules:
+        // 1. Detailers -> QC
+        // 2. Managers -> Bypass QC (Straight to Completed)
+
+        const bypassRoles = [
+            'SystemAdmin', 'CompanyOwner', 'LocationManager', 'ServiceManager', 'ShopManager',
+            // Add Display Names (Space-separated) to catch mismatched session formats
+            'System Admin', 'Company Owner', 'Location Manager', 'Service Manager', 'Shop Manager'
+        ];
+
+        // Debug Log
+        console.log(`[TicketService.complete] User: ${user.name}, Roles: ${JSON.stringify(user.roles)}, Ticket Status: ${ticket.status}`);
+
+        // Check if user has ANY of the bypass roles
+        // user.roles is just string[] based on UserContext interface
+        const canBypassQA = user.roles ? user.roles.some(r => bypassRoles.includes(r)) : false;
+
+        let newStatus = TicketStatus.QualityControl;
+
+        if (canBypassQA) {
+            // Managers always complete directly
+            newStatus = TicketStatus.Completed;
+        } else {
+            // Technicians / Detailers
+            if (ticket.status === TicketStatus.QualityControl) {
+                // If already in QC, a non-manager cannot complete it
+                throw new Error("Permission Denied: Quality Control approval required.");
+            }
+            newStatus = TicketStatus.QualityControl;
+        }
 
         // Perform the status update first
         await prisma.serviceTicket.update({
@@ -442,7 +491,8 @@ export class TicketService {
 
         // WORKFLOW AUTOMATION (Only if completed)
         if (newStatus === TicketStatus.Completed) {
-            // Check if there are ANY other active tickets for this VIN
+            // Rule 4 & 6
+            // 1. Check if ANY other active tickets (Status != Completed)
             const activeTicketsCount = await prisma.serviceTicket.count({
                 where: {
                     vehicleVin: ticket.vehicleVin,
@@ -452,63 +502,90 @@ export class TicketService {
             });
 
             if (activeTicketsCount === 0) {
-                // Dynamic Reversion Logic
-                // Find the last status before it entered a service flow
-                const history = await prisma.vehicleHistory.findMany({
+                // 2. Check for Previous "POSTED" or "SOLD" status in History
+                // "If yes -> Back to posted or sold, whichever was last"
+                const history = await prisma.vehicleHistory.findFirst({
                     where: {
                         vehicleId: ticket.vehicleVin,
-                        field: 'status',
+                        newValue: { in: ['POSTED', 'SOLD'] }, // Check for these specific statuses
                         companyId: user.companyId!
                     },
                     orderBy: { timestamp: 'desc' },
-                    take: 50 // Increased capture depth
                 });
 
-                // Default fallback
-                let targetStatus = 'READY';
-                if (ticket.type === 'DETAILING') targetStatus = 'DETAILED';
-
-                // Look for a transition INTO service
-                // e.g. from 'POSTED' to 'IN_SERVICE' or 'INSPECTED'
-                // We want the 'oldValue' of that transition.
-                const serviceStatuses = ['IN_SERVICE', 'IN_REPAIR', 'INSPECTED', 'WAITING_PARTS', 'IN DETAILING', 'IN REQUEST'];
-
-                const entryLog = history.find(h =>
-                    serviceStatuses.some(s => s.toUpperCase() === (h.newValue?.replace(/"/g, '') || '').toUpperCase()) &&
-                    !serviceStatuses.some(s => s.toUpperCase() === (h.oldValue?.replace(/"/g, '') || '').toUpperCase())
-                );
-
-                if (entryLog && entryLog.oldValue) {
-                    targetStatus = entryLog.oldValue.replace(/"/g, '');
+                if (history && history.newValue) {
+                    // Revert to history
+                    const targetStatus = history.newValue.replace(/"/g, ''); // cleanup quotes if any
+                    await prisma.vehicle.update({
+                        where: { vin: ticket.vehicleVin },
+                        data: { status: targetStatus }
+                    });
                 } else {
-                    // Try case-insensitive fallback if exact match failed
-                    const entryLogRelaxed = history.find(h =>
-                        serviceStatuses.some(s => s.toUpperCase() === (h.newValue?.replace(/"/g, '') || '').toUpperCase()) &&
-                        !serviceStatuses.includes(h.oldValue?.replace(/"/g, '') || '')
-                    );
-                    if (entryLogRelaxed && entryLogRelaxed.oldValue) {
-                        targetStatus = entryLogRelaxed.oldValue.replace(/"/g, '');
+                    // 3. If NOT posted/sold (New Inventory Flow)
+                    if (ticket.type === 'RECON') {
+                        // "Repaired, and create a Detailing ticket"
+                        await prisma.vehicle.update({
+                            where: { vin: ticket.vehicleVin },
+                            data: { status: 'Repaired' }
+                        });
+
+                        // Create Detailing Ticket
+                        // Use a simplified internal create (avoiding permission checks loop if possible, or use standard create)
+                        // We need to fetch vehicle stock for ID gen, or re-use create logic. 
+                        // It is safer to use TicketService.create but we need to mock UserContext or reuse `user`.
+
+                        // ID Gen logic copy is safer here to avoid circular dep or heavy refactor
+                        // Or just call TicketService.create with current context
+                        await TicketService.create(user, {
+                            vehicleVin: ticket.vehicleVin,
+                            description: 'Post-Repair Detailing',
+                            priority: 'Normal',
+                            type: 'DETAILING'
+                        });
+
+                    } else if (ticket.type === 'DETAILING') {
+                        // "Detailed"
+                        await prisma.vehicle.update({
+                            where: { vin: ticket.vehicleVin },
+                            data: { status: 'Detailed' }
+                        });
                     }
                 }
-
-                // Apply Status
-                await prisma.vehicle.update({
-                    where: { vin: ticket.vehicleVin },
-                    data: { status: targetStatus }
-                });
-
-                // Auto-create Detail if RECON finished and it was previously POSTED/SOLD? 
-                // Or user instruction: "If the car was in Posted status... after those tickets are completed, the car should go back to the Posted Status"
-                // It implies we don't necessarily chain Detailing automatically if we are reverting.
-                // However, existing logic had auto-create detailing. I will COMMENT IT OUT to strictly follow "REVERT" logic unless explicitly asked to keep it.
-                // User said "Start with DETAILED PLAN", plan said "Revert".
-                // I will assume auto-chaining is NOT desired if we are reverting to Posted.
-                // But if it was "PURCHASED", maybe we still need flow?
-                // For now, I'll stick to simple reversion.
             }
         }
 
         return { success: true };
+    }
+
+
+    static async assignTech(user: UserContext, ticketId: string, techId: string) {
+        PermissionService.require(user, ActionType.Update, ResourceType.ServiceTicket);
+
+        const ticket = await prisma.serviceTicket.findUnique({
+            where: { id: ticketId, companyId: user.companyId! }
+        });
+        if (!ticket) throw new Error("Ticket not found");
+
+        const status = ticket.status === TicketStatus.Queue ? TicketStatus.Assigned : ticket.status;
+
+        const targetAttributes: any = { status: 'In Repair' };
+        if (ticket.type === 'DETAILING') {
+            targetAttributes.status = 'In Detailing';
+        }
+
+        await prisma.$transaction([
+            prisma.serviceTicket.update({
+                where: { id: ticketId },
+                data: {
+                    techId,
+                    status
+                }
+            }),
+            prisma.vehicle.update({
+                where: { vin: ticket.vehicleVin },
+                data: targetAttributes
+            })
+        ]);
     }
 
     static async requestParts(user: UserContext, ticketId: string, description: string) {

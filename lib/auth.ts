@@ -13,7 +13,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       if (!user.email) return false;
 
+      // Log Sign In
+      const { SystemLogger } = await import('@/lib/logger');
+      await SystemLogger.log('USER_LOGIN', { email: user.email }, { id: user.id, name: user.name, companyId: null });
+
       // Auto-assignment Logic for Orphans
+
       const dbUser = await prisma.user.findUnique({
         where: { email: user.email },
         include: { memberships: true },

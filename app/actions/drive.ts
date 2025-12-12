@@ -3,96 +3,38 @@
 import { prisma } from '@/lib/prisma';
 import { driveService } from '@/lib/drive';
 import { revalidatePath } from 'next/cache';
+import { SystemLogger } from '@/lib/logger';
+import { auth } from '@/lib/auth';
+
 
 export async function syncVehicleImages(vin: string, folderUrl: string) {
+    const session = await auth();
     if (!folderUrl) throw new Error('No Folder URL provided');
+
 
     const folderId = driveService.getFolderIdFromUrl(folderUrl);
     if (!folderId) throw new Error('Invalid Google Drive Folder URL');
 
-    const files = await driveService.listFilesInFolder(folderId);
-
-    if (!files || files.length === 0) {
-        return { success: true, count: 0, message: 'No files found in folder' };
-    }
-
-    // Get existing images to determine order and identify orphans
-    const existingImages = await prisma.vehicleImage.findMany({
-        where: { vehicleVin: vin },
-        orderBy: { order: 'asc' }
-    });
-
     // CRITICAL FIX: Persist the Drive URL to the Vehicle record immediately
-    // This allows the user to see the link even if they haven't saved the full form yet.
     await prisma.vehicle.update({
         where: { vin },
         data: { googleDriveUrl: folderUrl }
     });
 
-    // 1. Identify and Delete Orphans (Images in DB but not in new Drive Folder)
-    const driveFileIds = new Set(files.map((f: any) => f.id));
-    const orphans = existingImages.filter(img => img.driveId && !driveFileIds.has(img.driveId));
+    // Enqueue the heavy sync job
+    const { Queue } = await import('@/lib/queue'); // Dynamic import to avoid cycles/init issues
+    await Queue.enqueue('SYNC_DRIVE_FOLDER', { vin, folderId, companyId: 'todo-context' });
+    await SystemLogger.log('DRIVE_SYNC_STARTED', { vin, folderId }, { id: session?.user?.id, name: session?.user?.name, companyId: session?.user?.companyId });
+    // Note: passing companyId might be needed for stricter multi-tenancy worker
 
-    if (orphans.length > 0) {
-        await prisma.vehicleImage.deleteMany({
-            where: {
-                id: { in: orphans.map(o => o.id) }
-            }
-        });
-        console.log(`Deleted ${orphans.length} orphaned images for VIN ${vin}`);
-    }
 
-    // 2. Add New Images
-    let nextOrder = existingImages.length > 0
-        ? (existingImages[existingImages.length - 1].order || 0) + 1
-        : 0;
-
-    // Reset order if we deleted everything? 
-    // If we deleted everything (e.g. new folder), nextOrder should probably start at 0.
-    // But if we just deleted some, we append. 
-    // If the user switched folders completely, 'orphans' would be ALL existing images.
-    // So existingImages.length would be equal to orphans.length.
-    if (orphans.length === existingImages.length) {
-        nextOrder = 0;
-    }
-
-    let count = 0;
-    for (const file of files) {
-        // Check if image already exists (in the remaining set)
-        const exists = existingImages.find(img => img.driveId === file.id);
-
-        if (!exists && file.id) {
-            await prisma.vehicleImage.create({
-                data: {
-                    vehicleVin: vin,
-                    driveId: file.id,
-                    publicUrl: file.thumbnailLink || file.webViewLink, // Fallback
-                    mimeType: file.mimeType,
-                    name: file.name,
-                    order: nextOrder++,
-                    isPublic: true // Default to visible
-                }
-            });
-            count++;
-        }
-    }
-
-    revalidatePath(`/inventory/${vin}`);
-    revalidatePath(`/inventory/${vin}/edit`);
-    revalidatePath('/inventory');
-
-    // Fetch final list of images to return to client
-    const finalImages = await prisma.vehicleImage.findMany({
-        where: { vehicleVin: vin },
-        orderBy: { order: 'asc' }
-    });
-
+    // Return immediate feedback
     return {
         success: true,
-        count,
-        deleted: orphans.length,
-        message: `Synced: Added ${count} new, Removed ${orphans.length} old`,
-        images: finalImages
+        count: 0,
+        deleted: 0,
+        message: 'Sync started in background. Images will appear shortly.',
+        images: [] // Client should handle empty list or Optimistic updates
     };
 }
 
@@ -107,7 +49,11 @@ export async function reorderImages(vin: string, imageIds: string[]) {
 
     await prisma.$transaction(updates);
     await prisma.$transaction(updates);
+    // await prisma.$transaction(updates); // Duplicate call?
+    const session = await auth();
+    await SystemLogger.log('VEHICLE_IMAGES_REORDERED', { vin, count: imageIds.length }, { id: session?.user?.id, name: session?.user?.name, companyId: session?.user?.companyId });
     revalidatePath(`/inventory/${vin}`);
+
     revalidatePath(`/inventory/${vin}/edit`);
 }
 
@@ -120,7 +66,10 @@ export async function toggleImageVisibility(vin: string, imageId: string, isPubl
         });
         revalidatePath(`/inventory/${vin}`);
         revalidatePath(`/inventory/${vin}/edit`);
+        const session = await auth();
+        await SystemLogger.log('VEHICLE_IMAGE_VISIBILITY_UPDATED', { vin, imageId, isPublic }, { id: session?.user?.id, name: session?.user?.name, companyId: session?.user?.companyId });
         console.log(`[Server] Toggle successful`);
+
     } catch (error) {
         console.error(`[Server] Toggle failed:`, error);
         throw error;

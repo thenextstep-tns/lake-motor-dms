@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma'; // We need to create this singleton
 import { Vehicle, Prisma } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
+import { DomainEvents } from '@/lib/events';
+import { SystemLogger } from '@/lib/logger';
 // import { checkPermission, Role } from '@/lib/auth'; // Deprecated
+
 
 // State Machine Definitions
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -104,7 +107,11 @@ export async function getVehicles(lotId?: string) {
                 include: { codes: true },
                 orderBy: { date: 'desc' }
             },
-            marketingLabels: true
+            marketingLabels: true,
+            serviceTickets: {
+                where: { markedForDeletion: false },
+                orderBy: { createdAt: 'desc' }
+            }
         },
     });
     return vehicles.map(serializeVehicle);
@@ -158,6 +165,7 @@ export async function createVehicle(data: any, _userId?: string, marketingLabelI
         // Inject Tenancy
         companyId: user.companyId,
         lotId: data.lotId || user.lotId,
+        status: data.status || 'Purchased',
         // Explicit casts for new toggles
         hasGuarantee: Boolean(data.hasGuarantee),
         hasTitle: Boolean(data.hasTitle),
@@ -172,17 +180,22 @@ export async function createVehicle(data: any, _userId?: string, marketingLabelI
         data: sanitizedData,
     });
 
-    // Initial Log
-    await prisma.vehicleHistory.create({
-        data: {
-            vehicleId: vehicle.vin,
-            userId: user.id,
-            userName: user.name,
-            companyId: user.companyId,
-            field: 'CREATION',
-            newValue: 'Vehicle Created'
-        }
+    // Event: Vehicle Created (Async Broadcast)
+    DomainEvents.emit('VEHICLE_UPDATED', {
+        vin: vehicle.vin,
+        changes: { 'CREATION': { old: null, new: 'Vehicle Created' } },
+        user,
+        timestamp: new Date()
     });
+
+    // Explicit Log (Blocking persistence)
+    await SystemLogger.log('VEHICLE_CREATED', {
+        vin: vehicle.vin,
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year
+    }, user);
+
 
     revalidatePath('/inventory');
     return serializeVehicle(vehicle);
@@ -196,23 +209,34 @@ export async function updateVehicleStatus(vin: string, newStatus: string, _userI
     });
     if (!vehicle) throw new Error('Vehicle not found or access denied');
 
+    // Date Logic
+    const updateData: any = { status: newStatus };
+    if (newStatus === 'POSTED' && vehicle.status !== 'POSTED') {
+        updateData.datePosted = new Date();
+    }
+    if (newStatus === 'SOLD' && vehicle.status !== 'SOLD') {
+        updateData.dateSold = new Date();
+    }
+
     const updatedVehicle = await prisma.vehicle.update({
         where: { vin },
-        data: { status: newStatus },
+        data: updateData,
     });
 
-    // Log Log
-    await prisma.vehicleHistory.create({
-        data: {
-            vehicleId: vin,
-            userId: user.id,
-            userName: user.name,
-            companyId: user.companyId,
-            field: 'status',
-            oldValue: vehicle.status,
-            newValue: newStatus
-        }
+    // Event: Status Change
+    DomainEvents.emit('VEHICLE_UPDATED', {
+        vin,
+        changes: { 'status': { old: vehicle.status, new: newStatus } },
+        user,
+        timestamp: new Date()
     });
+
+    await SystemLogger.log('VEHICLE_STATUS_UPDATED', {
+        vin,
+        oldStatus: vehicle.status,
+        newStatus
+    }, user);
+
 
     revalidatePath('/inventory');
     return serializeVehicle(updatedVehicle);
@@ -236,18 +260,16 @@ export async function deleteVehicle(vin: string) {
         }
     });
 
-    // Log History
-    await prisma.vehicleHistory.create({
-        data: {
-            vehicleId: vin,
-            userId: user.id,
-            userName: user.name,
-            companyId: user.companyId,
-            field: 'status',
-            oldValue: vehicle.status,
-            newValue: 'ARCHIVED (Deleted)'
-        }
+    // Event: Vehicle Deleted
+    DomainEvents.emit('VEHICLE_UPDATED', {
+        vin,
+        changes: { 'status': { old: vehicle.status, new: 'ARCHIVED (Deleted)' } },
+        user,
+        timestamp: new Date()
     });
+
+    await SystemLogger.log('VEHICLE_DELETED', { vin }, user);
+
 
     revalidatePath('/inventory');
     return { success: true };
@@ -306,8 +328,16 @@ export async function updateVehicle(vin: string, data: any, _userId?: string, ma
     // Final safety: delete companyId/lotId from rest if they stuck around (though we destructured above)
     if ('companyId' in sanitizedData) delete (sanitizedData as any).companyId;
 
+    // Date Logic for Manual Updates
+    if (sanitizedData.status === 'POSTED' && existing.status !== 'POSTED') {
+        (sanitizedData as any).datePosted = new Date();
+    }
+    if (sanitizedData.status === 'SOLD' && existing.status !== 'SOLD') {
+        (sanitizedData as any).dateSold = new Date();
+    }
+
     // --- Audit Logging Logic ---
-    const historyEntries = [];
+    const changes: Record<string, { old: any, new: any }> = {};
 
     // Compare simplistic text/number fields
     // We'll simplisticly iterate sanitizedData keys.
@@ -346,54 +376,25 @@ export async function updateVehicle(vin: string, data: any, _userId?: string, ma
         }
 
         // Normalize values for comparison
-        // Treat null, undefined, "", and 0 (for numbers) carefully
         const normalize = (val: any) => {
             if (val === null || val === undefined) return '';
             if (typeof val === 'number') return val.toString();
             if (typeof val === 'string') return val.trim();
-            if (typeof val === 'boolean') return val ? 'Yes' : 'No'; // Nice boolean readout
-            if (typeof val === 'object') return JSON.stringify(val); // Fallback to avoid [object Object]
+            if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+            if (typeof val === 'object') return JSON.stringify(val);
             return String(val);
         };
 
         const oldNorm = normalize(oldStr);
         const newNorm = normalize(newStr);
 
-        // Special case: if both normalize to "0" or empty, consider them same?
-        // E.g. DB has 0, Form sends "0" -> both are "0". OK.
-        // DB has null, Form sends 0 (e.g. price) -> "" vs "0". Changed.
-        // DB has 0, Form sends "" -> "0" vs "". Changed.
-
-        // However, user complained about 0 -> 0.
-        // If oldVal was 0 (number) -> "0"
-        // If newVal was 0 (number) -> "0"
-        // If strict equality passes, continue.
         if (oldNorm === newNorm) continue;
+        if (oldNorm === '' && newNorm === '0') continue;
 
-        // Ignore "0" to 0 number diffs if loose equality holds?
-        // Actually, let's catch the specific case of loose "0" == 0
-        // If we strictly compare formatted strings, we are safe.
-
-        historyEntries.push({
-            vehicleId: vin,
-            userId: user.id,
-            userName: user.name,
-            companyId: user.companyId,
-            field: key,
-            oldValue: String(oldStr ?? ''),
-            newValue: String(newStr ?? '')
-        });
+        changes[key] = { old: oldNorm, new: newNorm };
     }
 
-    if (historyEntries.length > 0) {
-        await prisma.vehicleHistory.createMany({
-            data: historyEntries
-        });
-    }
-    // ---------------------------
-
-    // [New] Explicitly update image metadata (Order & Visibility) from the form state.
-    // This allows the "Update Vehicle" button to act as the master save for gallery arrangement.
+    // [Restored] Explicitly update image metadata (Order & Visibility)
     if (images && Array.isArray(images)) {
         const imageUpdates = images.map((img: any, index: number) => {
             if (!img.id) return Promise.resolve();
@@ -408,15 +409,31 @@ export async function updateVehicle(vin: string, data: any, _userId?: string, ma
         await Promise.all(imageUpdates);
     }
 
-    const vehicle = await prisma.vehicle.update({
+    // --- Execute Update ---
+    const updatedVehicle = await prisma.vehicle.update({
         where: { vin },
         data: sanitizedData,
-        include: { images: true }
     });
+
+    // --- Emit Event ---
+    if (Object.keys(changes).length > 0) {
+        DomainEvents.emit('VEHICLE_UPDATED', {
+            vin,
+            changes,
+            user,
+            timestamp: new Date()
+        });
+
+        await SystemLogger.log('VEHICLE_UPDATED', {
+            vin,
+            changes
+        }, user);
+    }
+
 
     revalidatePath('/inventory');
     revalidatePath(`/inventory/${vin}`);
-    return serializeVehicle(vehicle);
+    return serializeVehicle(updatedVehicle);
 }
 
 export async function getVehicleByVin(vin: string) {
@@ -805,16 +822,11 @@ export async function revertVehicleChange(logId: string) {
     }
 
     // New Log for the Revert
-    await prisma.vehicleHistory.create({
-        data: {
-            vehicleId: log.vehicleId,
-            userId: user.id,
-            userName: user.name,
-            companyId: user.companyId,
-            field: log.field,
-            oldValue: log.newValue,
-            newValue: log.oldValue + ' (Reverted)'
-        }
+    DomainEvents.emit('VEHICLE_UPDATED', {
+        vin: log.vehicleId,
+        changes: { [log.field]: { old: log.newValue, new: log.oldValue + ' (Reverted)' } },
+        user,
+        timestamp: new Date()
     });
 
     await prisma.vehicle.update({

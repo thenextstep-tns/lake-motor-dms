@@ -101,6 +101,7 @@ model User {
 
   // App-specific
   currentLotId String? // Last visited context
+  tablePreferences String? // JSON: { "inventory": ["status", "vin"], "service": [...] }
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -345,6 +346,10 @@ model Vehicle {
   seoDescription String?
 
   status String @default("PURCHASED")
+  
+  // Date Tracking
+  datePosted DateTime?
+  dateSold   DateTime?
 
   // Scoping & Safety
   companyId         String
@@ -378,6 +383,7 @@ model Vehicle {
 
   // History Relation
   history VehicleHistory[]
+  jobs    Job[]
 }
 
 model VehicleHistory {
@@ -604,4 +610,43 @@ model MarketingLabel {
   updatedAt DateTime @updatedAt
 
   @@unique([name, companyId])
+}
+
+// --- Async Architecture ---
+
+model Job {
+  id      String @id @default(cuid())
+  type    String // e.g., 'SYNC_DRIVE_FOLDER', 'GENERATE_FEED'
+  payload String // JSON string of arguments
+
+  status String  @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  result String? // JSON string of result
+  error  String? // Error message if failed
+
+  retries    Int @default(0)
+  maxRetries Int @default(3)
+
+  runAt     DateTime @default(now()) // Scheduled time
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Optional: Link to entities if helpful for debugging
+  vehicleVin String?
+  vehicle    Vehicle? @relation(fields: [vehicleVin], references: [vin], onDelete: SetNull)
+}
+
+model SystemEvent {
+  id        String   @id @default(cuid())
+  type      String
+  payload   String   // JSON string
+  
+  userId    String?
+  userName  String?
+  companyId String?
+  
+  timestamp DateTime @default(now())
+
+  @@index([companyId])
+  @@index([type])
+  @@index([timestamp])
 }

@@ -23,6 +23,22 @@ export default function VehicleDetailClient({ vehicle }: { vehicle: any }) {
                                 }`}>
                                 {vehicle.status}
                             </span>
+
+                            {/* Date Stats */}
+                            <div className="flex flex-col text-xs text-right ml-auto text-gray-400">
+                                <span>Added: {new Date(vehicle.createdAt).toLocaleDateString()}</span>
+                                {vehicle.datePosted && (
+                                    <span>
+                                        Posted: {new Date(vehicle.datePosted).toLocaleDateString()}
+                                        ({Math.floor((new Date().getTime() - new Date(vehicle.datePosted).getTime()) / (1000 * 60 * 60 * 24))} days)
+                                    </span>
+                                )}
+                                {vehicle.dateSold && vehicle.datePosted && (
+                                    <span className="text-green-400 font-bold">
+                                        Sold in: {Math.floor((new Date(vehicle.dateSold).getTime() - new Date(vehicle.datePosted).getTime()) / (1000 * 60 * 60 * 24))} days
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         {/* Marketing Labels */}
                         {vehicle.marketingLabels && vehicle.marketingLabels.length > 0 && (

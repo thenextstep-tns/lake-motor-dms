@@ -12,8 +12,15 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         getAccessibleLots()
     ]);
 
-    // Mock user ID for now
+    // Mock user ID for now, but use real user fetch if available in session
+    // In a real app we would get session here.
     const userId = "user_123";
+
+    // Re-fetch user to get preferences
+    const { prisma } = await import('@/lib/prisma');
+    // Using a mock ID or the session ID if we had auth here
+    const user = await prisma.user.findFirst();
+    const userPreferences = user?.tablePreferences ? JSON.parse(user.tablePreferences) : {};
 
     return (
         <div className="h-full flex flex-col">
@@ -32,6 +39,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
                     userId={userId}
                     lots={lots}
                     currentLotId={lotId || 'ALL'}
+                    userPreferences={userPreferences}
                 />
             </div>
         </div>

@@ -2,9 +2,14 @@
 
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
+import { SystemLogger } from '@/lib/logger';
+import { auth } from '@/lib/auth';
+
 
 export async function deleteDeposit(depositId: string, vehicleVin: string) {
+    const session = await auth();
     try {
+
         await prisma.deposit.delete({
             where: { id: depositId },
         });
@@ -24,7 +29,10 @@ export async function deleteDeposit(depositId: string, vehicleVin: string) {
             });
         }
 
+        await SystemLogger.log('DEPOSIT_DELETED', { id: depositId, vin: vehicleVin }, { id: session?.user?.id, name: session?.user?.name, companyId: session?.user?.companyId });
+
         revalidatePath('/inventory');
+
         revalidatePath(`/inventory/${vehicleVin}`);
         revalidatePath('/public/inventory');
         revalidatePath(`/public/inventory/${vehicleVin}`);

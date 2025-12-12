@@ -4,7 +4,9 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
 
-import { syncInspectionToTicket, createServiceTicket } from '@/app/actions/service';
+import { DomainEvents } from '@/lib/events';
+import { SystemLogger } from '@/lib/logger';
+
 
 // Helper to get user context securely
 async function getUserContext() {
@@ -51,40 +53,27 @@ export async function createInspection(data: any) {
         });
 
         // Sync or Create Service Ticket
-        try {
-            if ((data.needsMechanicalRecon || data.needsCosmeticRecon)) {
-                // Check vehicle status first
-                const vehicle = await prisma.vehicle.findUnique({
-                    where: { vin: vehicleVin },
-                    select: { status: true }
-                });
+        // Emit Event for Workflow Processing (Service Ticket Creation/Sync)
+        const payload = {
+            inspectionId: inspection.id,
+            vehicleVin,
+            findings: {
+                needsMechanical: data.needsMechanicalRecon || false,
+                needsCosmetic: data.needsCosmeticRecon || false
+            },
+            priority: data.priority || 'Normal',
+            notes: info,
+            detailedFindings: {
+                mechanical: data.mechanicalReconData, // Pass raw object, listener will handle parsing if needed
+                cosmetic: data.cosmeticReconData
+            },
+            user: { id: user.id, companyId: user.companyId }
+        };
 
-                // ONLY auto-create if NOT Sold. 
-                // If Sold, the UI handles "Client Car" ticket creation explicitly.
-                if (vehicle?.status !== 'SOLD') {
-                    // Determine description based on recon needs
-                    const issues = [];
-                    if (data.needsMechanicalRecon) issues.push("Mechanical Recon");
-                    if (data.needsCosmeticRecon) issues.push("Cosmetic Recon");
+        console.log('[createInspection] Emitting INSPECTION_COMPLETED:', JSON.stringify(payload, null, 2));
+        await SystemLogger.log('INSPECTION_CREATED', { inspectionId: inspection.id, vin: vehicleVin, name }, { id: user.id, name: null, companyId: user.companyId });
+        DomainEvents.emit('INSPECTION_COMPLETED', payload);
 
-                    // Create new ticket
-                    await createServiceTicket({
-                        vehicleVin,
-                        description: `Inspection: ${issues.join(' & ')}`,
-                        inspectionId: inspection.id,
-                        repairDifficulty: 'Medium', // Default
-                        priority: 'Normal',
-                        type: 'RECON'
-                    });
-                }
-            } else {
-                // Just link to existing active ticket if any
-                await syncInspectionToTicket(inspection.id, vehicleVin);
-            }
-        } catch (syncError) {
-            console.error('Error syncing/creating ticket:', syncError);
-            return { success: true, inspection, warning: `Inspection saved, but Service Ticket failed: ${syncError instanceof Error ? syncError.message : 'Unknown Error'}` };
-        }
 
         revalidatePath(`/inventory/${vehicleVin}`);
         revalidatePath(`/inventory/${vehicleVin}/edit`);
@@ -97,6 +86,7 @@ export async function createInspection(data: any) {
 
 export async function updateInspection(id: string, data: any) {
     try {
+        const user = await getUserContext();
         const { name, date, info, codes } = data;
 
         // Transaction to handle codes update (delete all and recreate is simplest for now, or careful update)
@@ -140,12 +130,24 @@ export async function updateInspection(id: string, data: any) {
         });
 
         if (updatedInspection) {
-            // Sync to Service Ticket
-            try {
-                await syncInspectionToTicket(id, updatedInspection.vehicleVin);
-            } catch (syncError) {
-                console.error('Error syncing inspection to ticket:', syncError);
-            }
+            // Emit Event for Workflow Processing
+            await SystemLogger.log('INSPECTION_UPDATED', { inspectionId: id, vin: updatedInspection.vehicleVin }, { id: user.id, name: null, companyId: user.companyId });
+            DomainEvents.emit('INSPECTION_COMPLETED', {
+
+                inspectionId: id,
+                vehicleVin: updatedInspection.vehicleVin,
+                findings: {
+                    needsMechanical: data.needsMechanicalRecon || false,
+                    needsCosmetic: data.needsCosmeticRecon || false
+                },
+                priority: data.priority || 'Normal',
+                notes: info,
+                detailedFindings: {
+                    mechanical: data.mechanicalReconData,
+                    cosmetic: data.cosmeticReconData
+                },
+                user: { id: user.id, companyId: user.companyId }
+            });
 
             revalidatePath(`/inventory/${updatedInspection.vehicleVin}`);
             revalidatePath(`/inventory/${updatedInspection.vehicleVin}/edit`);
@@ -160,9 +162,12 @@ export async function updateInspection(id: string, data: any) {
 
 export async function deleteInspection(id: string, vin: string) {
     try {
+        const session = await auth();
         await prisma.inspection.delete({
             where: { id }
         });
+        await SystemLogger.log('INSPECTION_DELETED', { id, vin }, { id: session?.user?.id, name: session?.user?.name, companyId: session?.user?.companyId });
+
 
         revalidatePath(`/inventory/${vin}`);
         revalidatePath(`/inventory/${vin}/edit`);

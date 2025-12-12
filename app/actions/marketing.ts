@@ -3,28 +3,20 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/lib/session';
+import { SystemLogger } from '@/lib/logger';
+
 
 export async function generateSeoDescription(vin: string) {
-  const vehicle = await prisma.vehicle.findUnique({
-    where: { vin },
-    include: { serviceTickets: true }, // Include tickets to get inspection notes
-  });
+  const user = await getCurrentUser();
+  if (!user || !user.companyId) throw new Error("Unauthorized");
 
-  if (!vehicle) throw new Error('Vehicle not found');
+  // Enqueue Job
+  // Dynamic import to avoid cycle if Queue imports actions
+  const { Queue } = await import('@/lib/queue');
 
-  // Mock AI Call
-  // In reality:
-  // const prompt = `Write an SEO description for a ${vehicle.year} ${vehicle.make} ${vehicle.model}...`;
-  // const description = await openai.chat.completions.create(...)
+  await Queue.enqueue('SEO_GENERATE', { vin, companyId: user.companyId });
 
-  const description = `Check out this amazing ${vehicle.year} ${vehicle.make} ${vehicle.model}! 
-  Finished in a stunning ${vehicle.color}, this vehicle has only ${vehicle.odometer} miles. 
-  Fully inspected and serviced, it's ready for the road. 
-  Visit Lake Motor Group today to test drive this ${vehicle.trim} edition.`;
-
-  // We could store this in a new field 'seoDescription' on the Vehicle model
-  // For now, we'll just return it to the UI to be copied or used
-  return description;
+  return "SEO Description generation started in background...";
 }
 
 /**
@@ -32,6 +24,8 @@ export async function generateSeoDescription(vin: string) {
  */
 export async function getMarketingLabels() {
   const user = await getCurrentUser();
+  if (!user || !user.companyId) return []; // Return empty if no context
+
   return prisma.marketingLabel.findMany({
     where: {
       OR: [
@@ -45,6 +39,8 @@ export async function getMarketingLabels() {
 
 export async function createMarketingLabel(data: { name: string, colorCode: string }) {
   const user = await getCurrentUser();
+  if (!user || !user.companyId) throw new Error("Unauthorized");
+
   const label = await prisma.marketingLabel.create({
     data: {
       name: data.name,
@@ -52,7 +48,9 @@ export async function createMarketingLabel(data: { name: string, colorCode: stri
       companyId: user.companyId
     }
   });
+  await SystemLogger.log('MARKETING_LABEL_CREATED', { id: label.id, name: label.name }, { id: user.id, name: user.name, companyId: user.companyId });
   revalidatePath('/inventory/add');
+
   revalidatePath('/inventory/[vin]/edit');
   revalidatePath('/settings/marketing');
   return { success: true, label };
@@ -60,6 +58,8 @@ export async function createMarketingLabel(data: { name: string, colorCode: stri
 
 export async function updateMarketingLabel(id: string, data: { name: string, colorCode: string }) {
   const user = await getCurrentUser();
+  if (!user || !user.companyId) throw new Error("Unauthorized");
+
   const existing = await prisma.marketingLabel.findFirst({
     where: { id, OR: [{ companyId: user.companyId }, { companyId: null }] }
   });
@@ -70,7 +70,9 @@ export async function updateMarketingLabel(id: string, data: { name: string, col
     where: { id },
     data: { name: data.name, colorCode: data.colorCode }
   });
+  await SystemLogger.log('MARKETING_LABEL_UPDATED', { id: label.id, updates: data }, { id: user.id, name: user.name, companyId: user.companyId });
   revalidatePath('/inventory/add');
+
   revalidatePath('/inventory/[vin]/edit');
   revalidatePath('/settings/marketing');
   return { success: true, label };
@@ -78,13 +80,17 @@ export async function updateMarketingLabel(id: string, data: { name: string, col
 
 export async function deleteMarketingLabel(id: string) {
   const user = await getCurrentUser();
+  if (!user || !user.companyId) throw new Error("Unauthorized");
+
   const existing = await prisma.marketingLabel.findFirst({
     where: { id, companyId: user.companyId }
   });
   if (!existing) throw new Error("Label not found or cannot delete system default");
 
   await prisma.marketingLabel.delete({ where: { id } });
+  await SystemLogger.log('MARKETING_LABEL_DELETED', { id }, { id: user.id, name: user.name, companyId: user.companyId });
   revalidatePath('/inventory/add');
+
   revalidatePath('/inventory/[vin]/edit');
   revalidatePath('/settings/marketing');
   return { success: true };

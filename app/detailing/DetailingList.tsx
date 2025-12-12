@@ -4,9 +4,14 @@ import { useState } from 'react';
 import { clockIn, clockOut, completeTicket } from '@/app/actions/service'; // Verify we have these
 import { useRouter } from 'next/navigation';
 
-export default function DetailingList({ initialTickets, userId }: { initialTickets: any[], userId: string }) {
+export default function DetailingList({ initialTickets, userId, userRoles = [] }: { initialTickets: any[], userId: string, userRoles?: string[] }) {
     const router = useRouter();
     const [loading, setLoading] = useState<string | null>(null);
+
+    const bypassRoles = [
+        'SystemAdmin', 'CompanyOwner', 'LocationManager', 'ServiceManager', 'ShopManager'
+    ];
+    const canApprove = userRoles.some(r => bypassRoles.includes(r));
 
     const handleClockIn = async (ticketId: string) => {
         setLoading(ticketId);
@@ -24,12 +29,13 @@ export default function DetailingList({ initialTickets, userId }: { initialTicke
         if (!confirm('Are you sure you want to mark this detailing job as COMPLETE? Vehicle will be marked as "Detailed".')) return;
         setLoading(ticketId);
         try {
-            // Clock out first if needed? Standard service flow usually requires clock out.
-            // Simplified Detailing Ticket might just want "Done".
-            // Implementation Plan didn't specify strict clock-out for detailing but "Clock In/Out, Complete".
             // Let's assume we call completeTicket which handles status. The backend logic I wrote for completeTicket handles the status transition.
 
-            await completeTicket(ticketId);
+            const result = await completeTicket(ticketId);
+            if (!result.success) {
+                alert('Error completing ticket: ' + result.error);
+                return;
+            }
             router.refresh();
         } catch (e) {
             alert('Error completing ticket: ' + e);
@@ -60,7 +66,10 @@ export default function DetailingList({ initialTickets, userId }: { initialTicke
                 <div key={ticket.id} className="bg-white rounded-lg shadow border border-gray-200 p-4 flex flex-col justify-between">
                     <div>
                         <div className="flex justify-between items-start mb-2">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${ticket.status === 'In_Progress' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${ticket.status === 'In_Progress' ? 'bg-blue-100 text-blue-700' :
+                                    ticket.status === 'Quality_Control' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-yellow-100 text-yellow-700'
+                                }`}>
                                 {ticket.status.replace('_', ' ')}
                             </span>
                             <span className="text-gray-400 text-xs">{new Date(ticket.createdAt).toLocaleDateString()}</span>
@@ -73,7 +82,8 @@ export default function DetailingList({ initialTickets, userId }: { initialTicke
                     </div>
 
                     <div className="flex gap-2 mt-4">
-                        {ticket.status !== 'In_Progress' && (
+                        {/* Start Button */}
+                        {ticket.status === 'Queue' && (
                             <button
                                 onClick={() => handleClockIn(ticket.id)}
                                 disabled={loading === ticket.id}
@@ -83,6 +93,7 @@ export default function DetailingList({ initialTickets, userId }: { initialTicke
                             </button>
                         )}
 
+                        {/* In Progress Buttons */}
                         {ticket.status === 'In_Progress' && (
                             <>
                                 <button
@@ -97,9 +108,26 @@ export default function DetailingList({ initialTickets, userId }: { initialTicke
                                     disabled={loading === ticket.id}
                                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded font-medium disabled:opacity-50"
                                 >
-                                    Complete
+                                    {canApprove ? "Complete" : "Submit for QC"}
                                 </button>
                             </>
+                        )}
+
+                        {/* QC Approval Button (Managers Only) */}
+                        {ticket.status === 'Quality_Control' && canApprove && (
+                            <button
+                                onClick={() => handleComplete(ticket.id)}
+                                disabled={loading === ticket.id}
+                                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded font-medium disabled:opacity-50"
+                            >
+                                Approve & Complete
+                            </button>
+                        )}
+
+                        {ticket.status === 'Quality_Control' && !canApprove && (
+                            <div className="text-center text-sm text-gray-500 italic w-full py-2">
+                                Waiting for Approval
+                            </div>
                         )}
                     </div>
                 </div>

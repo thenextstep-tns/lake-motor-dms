@@ -36,6 +36,12 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
                     >
                         Rights Editor
                     </Link>
+                    <Link
+                        href="/settings/admin"
+                        className="flex items-center px-4 py-3 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors"
+                    >
+                        Admin Tools
+                    </Link>
                 </nav>
             </aside>
 

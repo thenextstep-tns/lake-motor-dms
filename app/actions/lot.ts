@@ -3,6 +3,8 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/lib/session';
+import { SystemLogger } from '@/lib/logger';
+
 
 export async function getCompanyLots(companyId: string) {
     const user = await getCurrentUser();
@@ -52,6 +54,8 @@ export async function createLot(
             },
         });
         console.log('Lot created:', lot.id);
+        await SystemLogger.log('LOT_CREATED', { id: lot.id, name: data.name }, { id: user.id, name: user.name, companyId: user.companyId });
+
         revalidatePath('/settings/lots');
         return lot;
     } catch (error) {
@@ -98,8 +102,11 @@ export async function updateLot(
                 },
             });
         });
+
         console.log('Lot updated:', lot.id);
+        await SystemLogger.log('LOT_UPDATED', { id: lot.id, updates: data }, { id: user.id, name: user.name, companyId: user.companyId });
         revalidatePath('/settings/lots');
+
         return lot;
     } catch (error) {
         console.error('Error updating lot:', error);
@@ -115,7 +122,9 @@ export async function deleteLot(lotId: string) {
         await prisma.lot.delete({
             where: { id: lotId },
         });
+        await SystemLogger.log('LOT_DELETED', { id: lotId }, { id: user.id, name: user.name, companyId: user.companyId });
         revalidatePath('/settings/lots');
+
     } catch (error) {
         console.error('Error deleting lot:', error);
         throw error;

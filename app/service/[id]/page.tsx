@@ -2,11 +2,15 @@ import { prisma } from '@/lib/prisma';
 import { notFound } from 'next/navigation';
 import ServiceTicketClient from './ServiceTicketClient';
 import { serialize } from '@/lib/utils';
+import { auth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ServiceTicketPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = await params;
+    const session = await auth();
+    const userRoles = session?.user?.roles?.map((r: any) => r.name) || [];
+
     const rawTicket = await prisma.serviceTicket.findUnique({
         where: { id },
         include: {
@@ -88,7 +92,7 @@ export default async function ServiceTicketPage({ params }: { params: Promise<{ 
                 id: `code-${code.code}`,
                 category: 'Diagnostic Code',
                 item: code.code,
-                issue: code.description,
+                issue: code.description || '',
                 status: 'Fail'
             });
         });
@@ -105,6 +109,7 @@ export default async function ServiceTicketPage({ params }: { params: Promise<{ 
             activeTasks={activeTasks}
             inspectionItems={inspectionItems}
             failedItems={failedItems}
+            userRoles={userRoles}
         />
     );
 }

@@ -3,6 +3,8 @@
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/lib/session';
+import { SystemLogger } from '@/lib/logger';
+
 
 export async function getCompanySettings(companyId: string) {
     const user = await getCurrentUser();
@@ -60,6 +62,9 @@ export async function updateCompanySettings(
         }
     }
 
+    await SystemLogger.log('COMPANY_SETTINGS_UPDATED', { companyId, updates: data }, { id: user.id, name: user.name, companyId: user.companyId });
+
     revalidatePath('/settings/company');
     return { success: true };
 }
+

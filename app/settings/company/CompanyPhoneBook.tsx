@@ -18,7 +18,7 @@ type Member = {
     workPhone: string | null;
 };
 
-export default function CompanyPhoneBook({ members }: { members: Member[] }) {
+export default function CompanyPhoneBook({ members, availableLots }: { members: Member[], availableLots: any[] }) {
     const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
     return (
@@ -71,7 +71,7 @@ export default function CompanyPhoneBook({ members }: { members: Member[] }) {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${member.status === 'Active' ? 'bg-green-100 text-green-800' :
-                                            member.status === 'Inactive' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                                        member.status === 'Inactive' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
                                         }`}>
                                         {member.status || 'Active'}
                                     </span>
@@ -93,6 +93,7 @@ export default function CompanyPhoneBook({ members }: { members: Member[] }) {
             {selectedMemberId && (
                 <MemberProfileModal
                     userId={selectedMemberId}
+                    availableLots={availableLots}
                     onClose={() => setSelectedMemberId(null)}
                 />
             )}
